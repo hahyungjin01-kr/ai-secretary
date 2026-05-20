@@ -142,9 +142,7 @@ async function myComputerReadAttachment(attachment: Attachment): Promise<{
                 content = wb.SheetNames.map((n: string) =>
                     `[Sheet: ${n}]
 ${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`
-                ).join('
-
-');
+                ).join('\n\n');
             } catch {
                 content = `[.xlsx 추출 실패: npm install xlsx 후 재시도하세요. 경로: ${localPath}]`;
             }
@@ -179,8 +177,7 @@ ${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`
 텍스트 외에 표·도표·그래프가 있으면 구조를 설명해주세요.
 텍스트가 전혀 없는 이미지라면 이미지 내용을 상세히 설명해주세요.`,
                     ]);
-                    content = `[Gemini Vision OCR - ${filename}]
-` + ocrResult.response.text();
+                    content = `[Gemini Vision OCR - ${filename}]` + ocrResult.response.text();
                 } catch (ocrErr: any) {
                     content = `[이미지 OCR 오류: ${ocrErr.message}]`;
                 }
@@ -302,7 +299,7 @@ async function sendSplitMessage(channel: any, text: string): Promise<void> {
             if (insideCodeBlock) currentChunk += '\n\`\`\`';
             await channel.send(currentChunk);
             
-            currentChunk = insideCodeBlock ? \`\`\`\`\${currentLanguage}\n\${line}\` : line;
+            currentChunk = insideCodeBlock ? `\`\`\`\${currentLanguage}\n\${line}\`` : line;
         } else {
             currentChunk += (currentChunk === '' ? '' : '\n') + line;
         }
@@ -405,21 +402,21 @@ async function callLLM(
 const CHANNEL_CONFIGS: Record<string, any> = {
     MODE_1: {
         name: "소스코드 개발 모드",
-        owner: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_OWNER_API_KEY },
+        owner: { model: "gpt-5.4", key: process.env.DEEPSEEK_OWNER_API_KEY },
         reviewer: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_REVIEWER_API_KEY },
         arbiter: { model: "gemini-3.1-pro-preview", key: process.env.GEMINI_ARBITER_API_KEY },
         moa: [
-            { model: "gpt-4o-mini", key: process.env.OPENAI_MOA_API_KEY },
+            { model: "deepseek-v4-flash", key: process.env.OPENAI_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.GEMINI_MOA_API_KEY },
         ],
     },
     MODE_2: {
         name: "주식 및 금융 데이터 분석 모드",
-        owner: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_OWNER_API_KEY },
+        owner: { model: "deepseek-v4-pro", key: process.env.DEEPSEEK_OWNER_API_KEY },
         reviewer: { model: "gemini-3.1-pro-preview", key: process.env.GEMINI_REVIEWER_API_KEY },
-        arbiter: { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_ARBITER_API_KEY },
+        arbiter: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_ARBITER_API_KEY },
         moa: [
-            { model: "gpt-4o-mini", key: process.env.OPENAI_MOA_API_KEY },
+            { model: "gpt-5.4", key: process.env.OPENAI_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.GEMINI_MOA_API_KEY },
         ],
     },
@@ -826,7 +823,7 @@ async function handleMessageEvent(message: Message): Promise<void> {
         }
 
         let attempt = 0;
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 6;
         let isApproved = false;
         let isUserStopped = false;
         let latestCode = '';
