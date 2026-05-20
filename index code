@@ -7,14 +7,12 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
-
 import { RSI, BollingerBands } from 'technicalindicators';
 
 // yahoo-finance2 v3: top-level에서 선언, startSwarms()에서 new YahooFinance()로 초기화
 let yahooFinance: any;
 
 dotenv.config();
-
 // ─────────────────────────────────────────────
 // Discord 봇 클라이언트 초기화
 // ─────────────────────────────────────────────
@@ -25,43 +23,37 @@ const clientOptions = {
         GatewayIntentBits.MessageContent,
     ]
 };
-
 const ownerBot    = new Client(clientOptions);
 const reviewerBot = new Client(clientOptions);
 const arbiterBot  = new Client(clientOptions);
-
 // 채널별 MoA 토글 상태 및 동시 작업 잠금
 const moaState: Record<string, boolean> = {};
 const activeTasks = new Set<string>();
-
 // 채널별 중단 컨트롤러 맵
 const abortControllers: Map<string, AbortController> = new Map();
-
 // ─────────────────────────────────────────────
 // ✅ 대화 히스토리 관리 (최근 N턴 유지)
 // ─────────────────────────────────────────────
 const MAX_HISTORY_TURNS = 10;
-
 interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
 }
 
 const channelHistories: Map<string, ChatMessage[]> = new Map();
-
 function getHistory(channelId: string): ChatMessage[] {
     if (!channelHistories.has(channelId)) {
         channelHistories.set(channelId, []);
-    }
+}
     return channelHistories.get(channelId)!;
 }
 
 function appendHistory(channelId: string, role: 'user' | 'assistant', content: string): void {
     const history = getHistory(channelId);
-    history.push({ role, content });
+history.push({ role, content });
     while (history.length > MAX_HISTORY_TURNS * 2) {
         history.splice(0, 2);
-    }
+}
 }
 
 function clearHistory(channelId: string): void {
@@ -73,9 +65,9 @@ function clearHistory(channelId: string): void {
 // ─────────────────────────────────────────────
 function getDesktopPath(): string {
     const home = os.homedir();
-    if (os.platform() === 'win32') {
+if (os.platform() === 'win32') {
         const oneDriveDesktop = path.join(home, 'OneDrive', 'Desktop');
-        if (fs.existsSync(oneDriveDesktop)) return oneDriveDesktop;
+if (fs.existsSync(oneDriveDesktop)) return oneDriveDesktop;
         return path.join(home, 'Desktop');
     }
     return path.join(home, 'Desktop');
@@ -90,7 +82,7 @@ async function sendFileToDiscord(
     filename: string
 ): Promise<void> {
     const buffer = Buffer.from(content, 'utf-8');
-    await channel.send({
+await channel.send({
         content: `💾 **[파일 전송 완료]** 아래 파일을 클릭해 다운로드하세요 → \`${filename}\``,
         files: [{ attachment: buffer, name: filename }],
     });
@@ -102,19 +94,17 @@ async function sendFileToDiscord(
 async function myComputerReadAttachment(attachment: Attachment): Promise<{
     content: string;
     filename: string;
-    localPath: string;
+localPath: string;
 }> {
     const filename = attachment.name ?? 'unknown_file';
     const ext = path.extname(filename).toLowerCase();
-
-    const tmpDir = path.join(os.tmpdir(), 'discord_bot_uploads');
+const tmpDir = path.join(os.tmpdir(), 'discord_bot_uploads');
     await fsp.mkdir(tmpDir, { recursive: true });
     const localPath = path.join(tmpDir, `${Date.now()}_${filename}`);
-
-    const res = await fetch(attachment.url);
+const res = await fetch(attachment.url);
     if (!res.ok) throw new Error(`파일 다운로드 실패: ${res.statusText}`);
     const buffer = Buffer.from(await res.arrayBuffer());
-    await fsp.writeFile(localPath, buffer);
+await fsp.writeFile(localPath, buffer);
 
     let content = '';
     const textExts = [
@@ -123,76 +113,81 @@ async function myComputerReadAttachment(attachment: Attachment): Promise<{
         '.rs', '.rb', '.php', '.html', '.css', '.xml', '.yaml', '.yml',
         '.sh', '.bat', '.ps1', '.env', '.ini', '.toml', '.sql'
     ];
-
-    try {
+try {
         if (textExts.includes(ext)) {
             content = await fsp.readFile(localPath, 'utf-8');
-        } else if (['.docx', '.odt', '.rtf'].includes(ext)) {
+} else if (['.docx', '.odt', '.rtf'].includes(ext)) {
             try {
                 const mammoth = require('mammoth');
-                const result = await mammoth.extractRawText({ path: localPath });
+const result = await mammoth.extractRawText({ path: localPath });
                 content = result.value;
-            } catch {
-                content = `[.docx 추출 실패: npm install mammoth 후 재시도하세요. 경로: ${localPath}]`;
+} catch {
+                content = `[.docx 추출 실패: npm install mammoth 후 재시도하세요.
+경로: ${localPath}]`;
             }
         } else if (['.xlsx', '.xlsm', '.pptx', '.epub'].includes(ext)) {
             try {
                 const XLSX = require('xlsx');
-                const wb = XLSX.readFile(localPath);
+const wb = XLSX.readFile(localPath);
                 content = wb.SheetNames.map((n: string) =>
                     `[Sheet: ${n}]
 ${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`
                 ).join('\n\n');
-            } catch {
-                content = `[.xlsx 추출 실패: npm install xlsx 후 재시도하세요. 경로: ${localPath}]`;
+} catch {
+                content = `[.xlsx 추출 실패: npm install xlsx 후 재시도하세요.
+경로: ${localPath}]`;
             }
         } else if (ext === '.pdf') {
             content = execSync(`pdftotext "${localPath}" -`, { maxBuffer: 10 * 1024 * 1024 }).toString();
-        } else if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'].includes(ext)) {
-            const ocrApiKey = process.env.GEMINI_OCR_API_KEY || process.env.GEMINI_MOA_API_KEY;
+} else if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'].includes(ext)) {
+            const ocrApiKey = process.env.GEMINI_OCR_API_KEY ||
+process.env.GEMINI_MOA_API_KEY;
             if (!ocrApiKey) {
                 content = `[이미지 OCR 실패: .env에 GEMINI_OCR_API_KEY 또는 GEMINI_MOA_API_KEY를 설정하세요.]`;
-            } else {
+} else {
                 try {
                     const mimeTypeMap: Record<string, string> = {
                         '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                         '.png': 'image/png',  '.gif': 'image/gif',
+ 
                         '.webp': 'image/webp', '.bmp': 'image/bmp',
                         '.tiff': 'image/tiff', '.tif': 'image/tiff',
                     };
-                    const mimeType = mimeTypeMap[ext] ?? 'image/jpeg';
+const mimeType = mimeTypeMap[ext] ?? 'image/jpeg';
                     const imageBytes = await fsp.readFile(localPath);
                     const base64Image = imageBytes.toString('base64');
-
-                    const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
                     const genAI = new GoogleGenerativeAI(ocrApiKey);
                     const visionModel = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
-
-                    const ocrResult = await visionModel.generateContent([
+const ocrResult = await visionModel.generateContent([
                         {
                             inlineData: { data: base64Image, mimeType },
                         },
-                        `이 이미지에 포함된 모든 텍스트를 빠짐없이 추출해서 원문 그대로 출력해주세요.
+               
+          `이 이미지에 포함된 모든 텍스트를 빠짐없이 추출해서 원문 그대로 출력해주세요.
 텍스트가 한국어·영어·혼합 등 어떤 언어든 그대로 출력하세요.
 텍스트 외에 표·도표·그래프가 있으면 구조를 설명해주세요.
 텍스트가 전혀 없는 이미지라면 이미지 내용을 상세히 설명해주세요.`,
                     ]);
-                    content = `[Gemini Vision OCR - ${filename}]` + ocrResult.response.text();
+content = `[Gemini Vision OCR - ${filename}]` + ocrResult.response.text();
                 } catch (ocrErr: any) {
                     content = `[이미지 OCR 오류: ${ocrErr.message}]`;
-                }
+}
             }
         } else {
-            content = `[지원되지 않는 파일 형식: ${ext}. 로컬 경로: ${localPath}]`;
+            content = `[지원되지 않는 파일 형식: ${ext}.
+로컬 경로: ${localPath}]`;
         }
     } catch (err: any) {
-        content = `[파일 내용 추출 중 오류: ${err.message}. 로컬 경로: ${localPath}]`;
+        content = `[파일 내용 추출 중 오류: ${err.message}.
+로컬 경로: ${localPath}]`;
     }
 
     const MAX_CONTENT_LENGTH = 150000;
-    if (content.length > MAX_CONTENT_LENGTH) {
+if (content.length > MAX_CONTENT_LENGTH) {
         content = content.slice(0, MAX_CONTENT_LENGTH) +
-            `\n\n... [파일 내용이 길어 앞 ${MAX_CONTENT_LENGTH}자만 전달합니다. 전체 파일은 로컬에 저장되어 있습니다.]`;
+            `\n\n... [파일 내용이 길어 앞 ${MAX_CONTENT_LENGTH}자만 전달합니다.
+전체 파일은 로컬에 저장되어 있습니다.]`;
     }
     return { content, filename, localPath };
 }
@@ -203,18 +198,17 @@ ${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`
 interface FileIntention {
     wantsFileOutput: boolean;
     wantsFileEdit: boolean;
-    savePath?: string;
+savePath?: string;
     suggestedFilename?: string;
 }
 
 function analyzeFileIntention(userContent: string, hasAttachments: boolean): FileIntention {
     const lower = userContent.toLowerCase();
-
-    const editKeywords = [
+const editKeywords = [
         '수정', '편집', '고쳐', '바꿔', '변경', '업데이트', '수정해줘', '수정해 줘',
         'edit', 'modify', 'update', 'fix', 'change', 'revise', 'rewrite'
     ];
-    const wantsFileEdit = hasAttachments && editKeywords.some(k => lower.includes(k));
+const wantsFileEdit = hasAttachments && editKeywords.some(k => lower.includes(k));
 
     const createKeywords = [
         '파일로', '파일 만들', '저장해', '저장 해', '만들어줘', '만들어 줘',
@@ -222,17 +216,15 @@ function analyzeFileIntention(userContent: string, hasAttachments: boolean): Fil
         '파일로 저장', '파일로 만들', '파일로 출력',
         'save', 'create file', 'write file', 'generate file', 'export to file'
     ];
-    const wantsFileOutput = createKeywords.some(k => lower.includes(k));
+const wantsFileOutput = createKeywords.some(k => lower.includes(k));
 
     let savePath: string | undefined;
     const absPathMatch = userContent.match(/(?:에|에다가|으로|로|in|to|at)\s+([A-Za-z]:\\[^\s]+|\/[^\s]+|~\/[^\s]*)/);
     if (absPathMatch) savePath = absPathMatch[1];
-
-    if (lower.includes('다운로드')) savePath = path.join(os.homedir(), 'Downloads');
+if (lower.includes('다운로드')) savePath = path.join(os.homedir(), 'Downloads');
     else if (lower.includes('문서')) savePath = path.join(os.homedir(), 'Documents');
-    else if (lower.includes('바탕화면') || lower.includes('데스크탑') || lower.includes('desktop')) savePath = getDesktopPath();
-
-    const filenameMatch = userContent.match(/["']([^"']+\.[a-zA-Z0-9]{1,10})["']/) ||
+else if (lower.includes('바탕화면') || lower.includes('데스크탑') || lower.includes('desktop')) savePath = getDesktopPath();
+const filenameMatch = userContent.match(/["']([^"']+\.[a-zA-Z0-9]{1,10})["']/) ||
                           userContent.match(/(\S+\.(txt|md|py|js|ts|json|csv|xlsx|docx|pdf|html|css|sh|yaml|yml|sql|java|cpp|go|rs))\b/i);
     const suggestedFilename = filenameMatch ? filenameMatch[1] : undefined;
 
@@ -250,26 +242,27 @@ interface ExtractedFile {
 function extractFileFromOutput(latestCode: string, arbiterFinal: string, userMessage: string): ExtractedFile {
     const lower = userMessage.toLowerCase();
     let ext = '.txt';
-    if (lower.includes('.py') || lower.includes('python')) ext = '.py';
+    if (lower.includes('.py') || lower.includes('python')) 
+ext = '.py';
     else if (lower.includes('.ts') || lower.includes('typescript')) ext = '.ts';
     else if (lower.includes('.js') || lower.includes('javascript')) ext = '.js';
     else if (lower.includes('.java')) ext = '.java';
-    else if (lower.includes('.go')) ext = '.go';
+else if (lower.includes('.go')) ext = '.go';
     else if (lower.includes('.rs') || lower.includes('rust')) ext = '.rs';
-    else if (lower.includes('.cpp') || lower.includes('c++')) ext = '.cpp';
+else if (lower.includes('.cpp') || lower.includes('c++')) ext = '.cpp';
     else if (lower.includes('.json')) ext = '.json';
-    else if (lower.includes('.yaml') || lower.includes('.yml')) ext = '.yaml';
+else if (lower.includes('.yaml') || lower.includes('.yml')) ext = '.yaml';
     else if (lower.includes('.sql')) ext = '.sql';
     else if (lower.includes('.html')) ext = '.html';
-    else if (lower.includes('.css')) ext = '.css';
+else if (lower.includes('.css')) ext = '.css';
     else if (lower.includes('.sh') || lower.includes('쉘스크립트')) ext = '.sh';
     else if (lower.includes('.csv')) ext = '.csv';
-    else if (lower.includes('.md') || lower.includes('마크다운')) ext = '.md';
+else if (lower.includes('.md') || lower.includes('마크다운')) ext = '.md';
     else if (lower.includes('블로그') || lower.includes('보고서') || lower.includes('논문') || lower.includes('글') || lower.includes('분석')) ext = '.md';
-
-    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `output_${ts}${ext}`;
-    const content = latestCode.trim() !== '' ? latestCode : arbiterFinal;
+    const content = latestCode.trim() !== '' ?
+latestCode : arbiterFinal;
 
     return { filename, content };
 }
@@ -279,30 +272,29 @@ function extractFileFromOutput(latestCode: string, arbiterFinal: string, userMes
 // ─────────────────────────────────────────────
 async function sendSplitMessage(channel: any, text: string): Promise<void> {
     if (!text) return;
-    const maxLength = 1900;
+const maxLength = 1900;
     const lines = text.split('\n');
     let currentChunk = '';
     let insideCodeBlock = false;
     let currentLanguage = '';
-
-    for (const line of lines) {
+for (const line of lines) {
         if (line.trim().startsWith('\`\`\`')) {
             insideCodeBlock = !insideCodeBlock;
-            if (insideCodeBlock) {
+if (insideCodeBlock) {
                 currentLanguage = line.trim().slice(3).trim();
-            } else {
+} else {
                 currentLanguage = '';
-            }
+}
         }
 
         if (currentChunk.length + line.length + 1 > maxLength) {
             if (insideCodeBlock) currentChunk += '\n\`\`\`';
-            await channel.send(currentChunk);
+await channel.send(currentChunk);
             
-            currentChunk = insideCodeBlock ? `\`\`\`\${currentLanguage}\n\${line}\`` : line;
+            currentChunk = insideCodeBlock ? `\`\`\`${currentLanguage}\n${line}\`` : line;
         } else {
             currentChunk += (currentChunk === '' ? '' : '\n') + line;
-        }
+}
     }
     
     if (currentChunk) await channel.send(currentChunk);
@@ -319,79 +311,79 @@ async function callLLM(
     history: ChatMessage[] = []
 ): Promise<string> {
     if (!apiKey) return `Error: ${model} API Key가 설정되지 않았습니다.`;
-    try {
+try {
         if (model.includes('gpt')) {
             const client = new OpenAI({ apiKey });
-            const messages: any[] = [
+const messages: any[] = [
                 { role: 'system', content: systemPrompt },
                 ...history,
                 { role: 'user', content: userPrompt }
             ];
-            const res = await client.chat.completions.create({ model, messages });
+const res = await client.chat.completions.create({ model, messages });
             return res.choices[0]?.message?.content || '';
-
-        } else if (model.includes('claude')) {
+} else if (model.includes('claude')) {
             const messages: any[] = [
                 ...history.map(m => ({ role: m.role, content: m.content })),
                 { role: 'user', content: userPrompt }
             ];
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
+const res = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
                     'x-api-key': apiKey,
                     'anthropic-version': '2023-06-01',
-                    'content-type': 'application/json',
+                   
+ 'content-type': 'application/json',
                     'anthropic-beta': 'prompt-caching-2024-07-31'
                 },
                 body: JSON.stringify({
                     model, max_tokens: 4096,
-                    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+                    system: [{ 
+type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
                     messages
                 })
             });
-            const data = await res.json() as any;
+const data = await res.json() as any;
             return data.content?.[0]?.text || '';
-
-        } else if (model.includes('gemini')) {
+} else if (model.includes('gemini')) {
             const genAI = new GoogleGenerativeAI(apiKey);
-            const gm = genAI.getGenerativeModel({ model, systemInstruction: systemPrompt });
+const gm = genAI.getGenerativeModel({ model, systemInstruction: systemPrompt });
             if (history.length > 0) {
                 const chat = gm.startChat({
                     history: history.map(m => ({
                         role: m.role === 'assistant' ? 'model' : 'user',
-                        parts: [{ text: m.content }]
+               
+         parts: [{ text: m.content }]
                     }))
                 });
-                const res = await chat.sendMessage(userPrompt);
+const res = await chat.sendMessage(userPrompt);
                 return res.response.text();
             } else {
                 const res = await gm.generateContent(userPrompt);
-                return res.response.text();
+return res.response.text();
             }
 
         } else if (model.includes('deepseek')) {
             const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' });
-            const messages: any[] = [
+const messages: any[] = [
                 { role: 'system', content: systemPrompt },
                 ...history,
                 { role: 'user', content: userPrompt }
             ];
-            const res = await client.chat.completions.create({ model: 'deepseek-v4-flash', messages });
+const res = await client.chat.completions.create({ model: 'deepseek-v4-flash', messages });
             return res.choices[0]?.message?.content || '';
-
-        } else if (model.includes('glm')) {
+} else if (model.includes('glm')) {
             const client = new OpenAI({ apiKey, baseURL: 'https://open.bigmodel.cn/api/paas/v4/' });
-            const messages: any[] = [
+const messages: any[] = [
                 { role: 'system', content: systemPrompt },
                 ...history,
                 { role: 'user', content: userPrompt }
             ];
-            const res = await client.chat.completions.create({ model, messages });
+const res = await client.chat.completions.create({ model, messages });
             return res.choices[0]?.message?.content || '';
-        }
+}
     } catch (err: any) {
         console.error(`[${model} 호출 오류]:`, err.message);
-        return `Error: ${err.message}`;
+return `Error: ${err.message}`;
     }
     return '';
 }
@@ -406,7 +398,8 @@ const CHANNEL_CONFIGS: Record<string, any> = {
         reviewer: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_REVIEWER_API_KEY },
         arbiter: { model: "gemini-3.1-pro-preview", key: process.env.GEMINI_ARBITER_API_KEY },
         moa: [
-            { model: "deepseek-v4-flash", key: process.env.OPENAI_MOA_API_KEY },
+            { model: "deepseek-v4-flash", 
+key: process.env.OPENAI_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.GEMINI_MOA_API_KEY },
         ],
     },
@@ -415,7 +408,8 @@ const CHANNEL_CONFIGS: Record<string, any> = {
         owner: { model: "deepseek-v4-pro", key: process.env.DEEPSEEK_OWNER_API_KEY },
         reviewer: { model: "gemini-3.1-pro-preview", key: process.env.GEMINI_REVIEWER_API_KEY },
         arbiter: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_ARBITER_API_KEY },
-        moa: [
+        
+moa: [
             { model: "gpt-5.4", key: process.env.OPENAI_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.GEMINI_MOA_API_KEY },
         ],
@@ -424,7 +418,8 @@ const CHANNEL_CONFIGS: Record<string, any> = {
         name: "블로그 및 마케팅 콘텐츠 생성 모드",
         owner: { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_OWNER_API_KEY },
         reviewer: { model: "gpt-4o-mini", key: process.env.OPENAI_REVIEWER_API_KEY },
-        arbiter: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_ARBITER_API_KEY },
+      
+  arbiter: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_ARBITER_API_KEY },
         moa: [
             { model: "gemini-3.1-flash-lite", key: process.env.GEMINI_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.OPENAI_MOA_API_KEY },
@@ -433,558 +428,3 @@ const CHANNEL_CONFIGS: Record<string, any> = {
     MODE_4: {
         name: "학술 논문 제작 및 전문 번역 모드",
         owner: { model: "gemini-3.1-flash-lite", key: process.env.GEMINI_OWNER_API_KEY },
-        reviewer: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_REVIEWER_API_KEY },
-        arbiter: { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_ARBITER_API_KEY },
-        moa: [
-            { model: "gpt-4o-mini", key: process.env.OPENAI_MOA_API_KEY },
-            { model: "glm-5.1", key: process.env.GEMINI_MOA_API_KEY },
-        ],
-    },
-    MODE_5: {
-        name: "심층 자료 조사 모드",
-        owner:    { model: "claude-haiku-4-5-20251001",  key: process.env.CLAUDE_OWNER_API_KEY },
-        reviewer: { model: "deepseek-v4-flash",          key: process.env.DEEPSEEK_REVIEWER_API_KEY },
-        arbiter:  { model: "gpt-5.4-mini",               key: process.env.OPENAI_ARBITER_API_KEY },
-        moa: [
-            { model: "gemini-3.1-pro-preview", key: process.env.GEMINI_MOA_API_KEY },
-            { model: "glm-5.1",                key: process.env.GLM_MOA_API_KEY },
-        ],
-    },
-};
-
-// ─────────────────────────────────────────────
-// 시간 엄격 적용 유틸리티
-// ─────────────────────────────────────────────
-function getStrictTimeEnforcement(): string {
-    const today = new Date();
-    const dateStr = today.toLocaleDateString('ko-KR', {
-        year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
-    });
-    return `\n[시스템 필수 지시사항: 현재 기준 날짜는 무조건 ${dateStr}입니다. 모델 컷오프의 한계로 인해 과거 연도(2024년, 2025년 등)를 언급하거나 기준으로 삼는 것을 엄격히 금지합니다.]\n`;
-}
-
-function getConfigForChannel(channelId: string) {
-    if (channelId === process.env.CHANNEL_MODE_1_ID) return CHANNEL_CONFIGS.MODE_1;
-    if (channelId === process.env.CHANNEL_MODE_2_ID) return CHANNEL_CONFIGS.MODE_2;
-    if (channelId === process.env.CHANNEL_MODE_3_ID) return CHANNEL_CONFIGS.MODE_3;
-    if (channelId === process.env.CHANNEL_MODE_4_ID) return CHANNEL_CONFIGS.MODE_4;
-    if (channelId === process.env.CHANNEL_MODE_5_ID) return CHANNEL_CONFIGS.MODE_5;
-    return null;
-}
-
-// ─────────────────────────────────────────────
-// 시스템 프롬프트 (전체 모드에 시간 강제화 적용 및 출력 최적화)
-// ─────────────────────────────────────────────
-const PROMPTS = {
-    MODE_1: {
-        get OWNER() { return `너는 전 세계에서 가장 코딩을 잘하는 마스터 소프트웨어 엔지니어(Owner)다.
-너는 사용자의 코딩 요구사항을 분석하여 버그가 없고 확장성이 뛰어난 완벽한 코드를 작성해야 한다.
-너는 Reviewer의 지독하고 까다로운 지적 사항을 겸허히 수용하여 코드를 발전시켜야 한다.
-자존심을 세우지 말고 Reviewer가 제시한 피드백을 100% 반영하되, 기존 초안의 훌륭한 아키텍처와 구조는 그대로 유지하면서 지적된 버그와 효율성만 완벽하게 개선한 수정 코드를 출력해라. 
-
-[핵심 지시사항]: 800줄이 넘는 전체 소스 코드를 통째로 다시 출력하지 마라. LLM 출력 토큰 제한을 방지하기 위해 오직 '수정되거나 추가된 특정 함수 및 클래스' 부분만 발췌하여 코드 블록으로 출력해라. 변경사항이 없는 기존 코드는 작성하지 마라.
-불필요한 서론, 변명, 코드 설명은 생략하고 실제 작동하는 소스코드 본문만 깔끔하게 출력해라.
-코드 외의 분석이나 설명은 <ANALYSIS> 태그에 작성하세요.\${getStrictTimeEnforcement()}`; },
-        get REVIEWER() { return `너는 이 세상에서 가장 까다롭고, 심술궂으며, 타협을 모르는 수석 코드 리뷰어(Senior Code Reviewer)다. 
-상대방이 제출한 소스코드를 절대로 무조건 칭찬하지 마라.
-제출된 코드에서 발생할 수 있는 가장 치명적인 단점 딱 2가지(성능 최적화, 보안 취약점, 예외 처리 누락 등)만 찾아서 뼈를 때리는 날카로운 피드백을 bullet point로만 제시해라. 
-친절한 인사말이나 칭찬은 일절 금지한다. 오직 버그와 단점만 저격해라.
-만약 코드가 더 이상 고칠 게 없이 완벽하다면 오직 대문자로 "PASS"라고만 출력해라.
-수정이 필요하면 <FEEDBACK> 태그에 작성하세요.\${getStrictTimeEnforcement()}`; }
-    },
-    MODE_2: {
-        get OWNER() {
-            return `당신은 주식 분석 전문가입니다. 반드시 최신 데이터를 활용하세요.\${getStrictTimeEnforcement()}
-다음 6단계를 엄격히 준수하여 리포트를 작성하세요.
-1STEP: 재무제표 3종 세트 분석
-2STEP: 밸류에이션 지표 분석
-3STEP: 기업의 경쟁력
-4STEP: 진입 타이밍 결정 (기술적 분석)
-5STEP: 시장 & 거시 요인
-6STEP: 포지션 관리 (손실 방지)
-
-마지막에 즉시 실행 가능한 체크리스트 표를 반드시 제공하세요.`;
-        },
-        get REVIEWER() {
-            return `너는 철저하게 하이 리스크를 잡아내는 수석 금융 리스크 관리자(CRO / Reviewer)다. 
-상대방이 제출한 주식 분석 보고서를 절대로 신뢰하지 마라.
-분석 내용 중 통계적 오류, 리스크 간과, 근거 없는 무리한 미래 예측 등 가장 치명적인 약점 딱 2가지만 찾아서 뼈를 때리는 날카로운 피드백을 bullet point로만 제시해라. 
-인사말이나 투자 응원은 일절 금지한다. 오직 리스크와 구멍만 저격해라.
-만약 분석이 완벽하고 리스크가 없다면 오직 대문자로 "PASS"라고만 출력해라.
-논리적 비약이나 과거 연도(2025년 이하)를 현재로 착각한 내용이 없다면 PASS를, 있다면 <FEEDBACK> 태그 안에 피드백을 주세요.\${getStrictTimeEnforcement()}`;
-        },
-        get ARBITER() {
-            return `너는 대법관(Arbiter)이다.\${getStrictTimeEnforcement()}
-모든 의견 중 가장 합리적이고 뛰어난 요소들을 최종 취합 및 조율하여, 사용자가 즉시 실무에 사용할 수 있는 최종 마스터피스 결과물을 출력하고 왜 이런 결론을 내렸는지 3줄로 요약해라. 반드시 한국어로만 답변하라.`;
-        },
-        get MOA() {
-            return `너는 특정 분야의 지식을 마스터한 외부 독립 전문가(MoA Advisor)다.
-너에게는 앞서 다른 에이전트들이 치열하게 토론하여 완성한 [최종 수정본 결과물]이 전달될 것이다.
-
-너는 이 결과물을 객관적이고 냉정하게 평가하여, 더 완벽한 마스터피스가 되기 위해 "마지막 한 끗을 채울 수 있는 기발하고 독창적인 개선 아이디어나 보완점 딱 1가지"만 제안해야 한다. 
-
-[주의사항]
-- 앞선 토론의 맥락을 모른 채 오직 결과물 자체만 보고 평가해라.
-- 다른 에이전트들과 중복되지 않는 너만의 독자적인 시각을 보여라.
-- 서론, 인사말, 칭찬은 일절 생략하고 핵심 제안 본론만 짧고 강력하게 출력해라.
-- 반드시 한국어로만 답변하라.
-\${getStrictTimeEnforcement()}`;
-        }
-    },
-    MODE_3: {
-        get OWNER() { return `너는 트렌디한 문장력을 가진 국내 최고의 스타 카피라이터이자 블로그 마케터(Owner)다.
-너는 사용자의 주제에 맞추어 인공지능 특유의 딱딱함(AI Vibe)이 전혀 없는, 인간미 넘치고 흡입력 있는 블로그 초안 글을 작성해야 한다.
-너는 Reviewer의 지적 사항을 겸허히 수용하여 글의 완성도를 높여야 한다.
-Reviewer가 제시한 가독성이나 키워드 피드백을 100% 반영하되, 글의 매력적인 톤앤매너는 유지하면서 부자연스러운 문체와 구성을 완벽하게 개선한 수정본 글을 출력해라. 
-서론이나 안내 문구는 생략하고 실제 포스팅할 글 본문만 깔끔하게 출력해라.
-\${getStrictTimeEnforcement()}`; },
-        get REVIEWER() { return `너는 검색엔진 상위 노출(SEO)과 독자 가독성만 평가하는 까다로운 수석 편집장(Reviewer)다. 
-상대방이 제출한 글을 절대로 그냥 통과시키지 마라.
-작성된 글에서 발견된 AI 특유의 부자연스러운 어투, 가독성을 해치는 긴 문장, 검색엔진(SEO) 최적화 미흡 등 가장 치명적인 단점 딱 2가지만 찾아서 날카로운 피드백을 bullet point로만 제시해라. 
-칭찬이나 격려는 일절 금지한다. 오직 글의 단점만 저격해라.
-만약 글이 수정할 곳 없이 완벽하다면 오직 대문자로 "PASS"라고만 출력해라.\${getStrictTimeEnforcement()}`; }
-    },
-    MODE_4: {
-        get OWNER() { return `너는 옥스퍼드 대학 출신의 학술 논문 작성이자 전문 번역가(Owner)다.
-너는 사용자가 제시한 학술 연구 요구사항이나 원문을 바탕으로 고도의 학술적 톤앤매너를 갖춘 논문 초안 및 번역본을 작성해야 한다.
-너는 Reviewer의 학술적 지적 사항을 겸허히 수용하여 텍스트를 정제해야 한다.
-Reviewer가 제시한 논리적 허점이나 오역 지적을 100% 반영하되, 연구의 핵심 명제와 학술적 가치는 유지하면서 전문 용어 오류와 문맥을 완벽하게 개선한 수정본을 출력해라. 
-불필요한 인사나 변명은 생략하고 실제 학술지 제출용 본문만 깔끔하게 출력해라.
-\${getStrictTimeEnforcement()}`; },
-        get REVIEWER() { return `
-너는 세계적인 학술지의 논문 심사위원이자 깐깐한 수석 감수관(Reviewer)다. 
-상대방이 제출한 논문 및 번역본을 절대로 부드럽게 넘겨주지 마라.
-제출된 텍스트에서 발견된 학술적 논리 모순, 오역, 학술 논문에 부적절한 단어 선택 등 가장 치명적인 단점 딱 2가지만 찾아서 뼈를 때리는 날카로운 피드백을 bullet point로만 제시해라. 
-인사말이나 격려는 일절 금지한다. 오직 논리적 허점과 오역만 저격해라.
-만약 텍스트가 심사 통과 수준으로 완벽하다면 오직 대문자로 "PASS"라고만 출력해라.
-\${getStrictTimeEnforcement()}`; }
-    },
-    get ARBITER() { return `너는 대법관(Arbiter)이다. 
-Owner의 최종 완성본과 Reviewer의 누적 토론 내용, 그리고 외부 전문가(MoA)들의 다양한 의견을 종합적으로 검토해라. 
-모든 의견 중 가장 합리적이고 뛰어난 요소들을 최종 취합 및 조율하여, 사용자가 즉시 실무에 사용할 수 있는 최종 마스터피스 결과물을 출력하고 왜 이런 결론을 내렸는지 3줄로 요약해라.
-\${getStrictTimeEnforcement()}`; },
-    get MOA() { return `너는 특정 분야의 지식을 마스터한 외부 독립 전문가(MoA Advisor)다.
-너에게는 앞서 다른 에이전트들이 치열하게 토론하여 완성한 [최종 수정본 결과물]이 전달될 것이다.
-
-너는 이 결과물을 객관적이고 냉정하게 평가하여, 더 완벽한 마스터피스가 되기 위해 "마지막 한 끗을 채울 수 있는 기발하고 독창적인 개선 아이디어나 보완점 딱 1가지"만 제안해야 한다. 
-
-[주의사항]
-- 앞선 토론의 맥락을 모른 채 오직 결과물 자체만 보고 평가해라.
-- 다른 에이전트들과 중복되지 않는 너만의 독자적인 시각을 보여라.
-- 서론, 인사말, 칭찬은 일절 생략하고 핵심 제안 본론만 짧고 강력하게 출력해라.
-- 반드시 한국어로만 답변하라
-\${getStrictTimeEnforcement()}`; },
-    MODE_5: {
-        get OWNER() { return `당신은 심층 자료 조사 및 초안 작성을 총괄하는 수석 연구원(Owner)입니다.\${getStrictTimeEnforcement()}
-다음의 엄격한 조사 방법론을 준수하여 최고 수준의 초안을 작성하십시오.
-
-1. 문제 구조화: 로직 트리(Logic Tree)와 MECE 원칙을 적용해 문제를 분해하십시오.
-2. 가설 기반 접근: 검증할 가설을 먼저 세운 후 조사를 진행하십시오.
-3. 데이터 수집: 구글 고급 검색 연산자(Dorks), OSINT 기법으로 원천 문서를 발굴하십시오.
-4. 시장 규모 추정: 탑다운·바텀업 방식을 조합해 TAM, SAM, SOM을 수치로 도출하십시오.
-5. 객관성 유지: 확증 편향에 빠지지 않고 마크다운 형식의 보고서를 작성하십시오.
-
-결과물은 <ANALYSIS> 태그 안에 마크다운 보고서로 출력하십시오. 반드시 한국어로만 답변하라.`; },
-        get REVIEWER() { return `당신은 무자비하게 엄격한 팩트체커이자 비판적 검토자(Reviewer)입니다.\${getStrictTimeEnforcement()}
-Owner의 자료 조사 초안의 무결성을 검증하고 허점을 찾아내는 것이 목표입니다.
-
-- 수평적 읽기(Lateral Reading): 외부 독립 출처로 교차 검증하십시오.
-- CRAAP 테스트: 최신성·관련성·권위·정확성·목적을 평가하십시오.
-- 수치 검증: TAM/SAM/SOM 근거와 탑다운 가정을 비판적으로 검토하십시오.
-
-오류 없음 → "DONE" 또는 "PASS" 출력.
-수정 필요 → "DONE_WITH_CONCERNS" + <FEEDBACK> 태그 안에 구체적 수정 지시.
-교착 상태 → "BLOCKED" 선언.
-반드시 한국어로만 답변하라.`; },
-        get ARBITER() { return `당신은 자료 조사 시스템의 최고 결정권자(Arbiter)입니다.\${getStrictTimeEnforcement()}
-Owner와 Reviewer 간 교착 상태 시 개입하여 최종 판정을 내립니다.
-
-- 객관적 중재: 양측 데이터의 신뢰도와 논리를 저울질하십시오.
-- MoA 의견 수렴: 외부 다각적 시각을 반영해 객관성을 극대화하십시오.
-- 최종 결정: 양비론 없이 정확한 팩트와 논리 구조를 확정하고, 사용자가 즉시 활용할 수 있는 최종 마스터피스 보고서를 마크다운으로 출력하십시오. 결론 근거를 3줄로 요약하십시오.
-반드시 한국어로만 답변하라.`; },
-        get MOA() { return `당신은 다각적 시각을 제공하는 독립적 자문 위원(MoA)입니다.\${getStrictTimeEnforcement()}
-현재 조사와 무관하게 완전히 새로운 시각으로 접근하는 것이 역할입니다.
-
-- 대안적 관점: 소수 의견, 이단적 이론, 다른 산업의 아날로그 사례를 제시하십시오.
-- 맹점 타격: 규제 변화, 지정학적 리스크, 기술적 한계 등 간과된 변수를 지적하십시오.
-- 정보 외연 확장: 현재 문헌의 반대 진영 연구 결과를 짧고 강력하게 요약하십시오.
-
-결론 없이 Arbiter가 참고할 이질적 통찰 3가지만 서론 없이 출력하십시오.
-반드시 한국어로만 답변하라.`; }
-    },
-};
-
-// ─────────────────────────────────────────────
-// 메인 메시지 이벤트 핸들러
-// ─────────────────────────────────────────────
-async function handleMessageEvent(message: Message): Promise<void> {
-    if (message.author.bot) return;
-    const channelId = message.channel.id;
-    const content   = message.content.trim();
-    const masterId  = process.env.DISCORD_OWNER_ID?.trim();
-
-    if (content === '그만' || content === '!stop') {
-        const ctrl = abortControllers.get(channelId);
-        if (ctrl && !ctrl.signal.aborted) {
-            ctrl.abort();
-            return void message.reply('🛑 **중단 요청을 받았습니다.**');
-        } else {
-            return void message.reply('ℹ️ 현재 진행 중인 작업이 없습니다.');
-        }
-    }
-
-    if (content === '!history clear' || content === '!대화초기화') {
-        clearHistory(channelId);
-        return void message.reply('🗑️ **대화 히스토리가 초기화되었습니다.** (최근 10턴 기억이 삭제됨)');
-    }
-
-    if (content === '!history' || content === '!히스토리') {
-        const turns = Math.floor(getHistory(channelId).length / 2);
-        return void message.reply(`📜 **현재 저장된 대화:** ${turns}턴 / 최대 ${MAX_HISTORY_TURNS}턴`);
-    }
-
-    if (content === '!moa on')  { moaState[channelId] = true;  return void message.reply('🟢 MoA 활성화'); }
-    if (content === '!moa off') { moaState[channelId] = false; return void message.reply('🔴 MoA 비활성화'); }
-    if (content.startsWith('!')) return;
-
-    const config = getConfigForChannel(channelId);
-    if (!config) return;
-
-    if (activeTasks.has(channelId)) return;
-    activeTasks.add(channelId);
-
-    const abortCtrl = new AbortController();
-    abortControllers.set(channelId, abortCtrl);
-    const signal = abortCtrl.signal;
-
-    try {
-        const ownerChannel    = await ownerBot.channels.fetch(channelId)    as any;
-        const reviewerChannel = await reviewerBot.channels.fetch(channelId) as any;
-        const arbiterChannel  = await arbiterBot.channels.fetch(channelId)  as any;
-
-        const attachments = [...message.attachments.values()];
-        let attachedFileContext = '';
-        let attachedLocalPaths: string[] = [];
-
-        // 1. 파일 첨부 처리
-        if (attachments.length > 0) {
-            await ownerChannel.send(`📎 **[My Computer]** 첨부 파일 ${attachments.length}개를 감지했습니다. 내용을 읽는 중...`);
-            for (const attachment of attachments) {
-                try {
-                    const { content: fileContent, filename, localPath } = await myComputerReadAttachment(attachment);
-                    attachedLocalPaths.push(localPath);
-                    attachedFileContext += `\n\n${'─'.repeat(40)}\n📄 [첨부 파일: ${filename}]\n${'─'.repeat(40)}\n${fileContent}`;
-                    await ownerChannel.send(`✅ **[My Computer]** \`${filename}\` 읽기 완료`);
-                } catch (err: any) {
-                    await ownerChannel.send(`⚠️ **[My Computer]** \`${attachment.name}\` 읽기 실패: ${err.message}`);
-                }
-            }
-        }
-
-        // 2. 외부 링크(URL) 처리 - 깃허브 코드 추출 포함
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        const urls = content.match(urlRegex);
-        let urlContext = '';
-
-        if (urls && urls.length > 0) {
-            await ownerChannel.send(`🔗 **[Web Fetcher]** ${urls.length}개의 외부 링크를 감지했습니다. 데이터를 추출합니다...`);
-            for (let url of urls) {
-                try {
-                    let fetchUrl = url;
-                    // 깃허브 코드(blob) 링크인 경우 raw 텍스트를 가져오도록 변환
-                    if (fetchUrl.includes('github.com') && fetchUrl.includes('/blob/')) {
-                        fetchUrl = fetchUrl.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
-                    }
-
-                    const res = await fetch(fetchUrl);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    
-                    let text = await res.text();
-                    const contentType = res.headers.get('content-type') || '';
-                    
-                    // 일반 웹페이지(HTML)인 경우 간단한 태그 제거
-                    if (contentType.includes('text/html') && !fetchUrl.includes('raw.githubusercontent')) {
-                        text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                                   .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                                   .replace(/<[^>]+>/g, '\n')
-                                   .replace(/\n\s+\n/g, '\n\n');
-                    }
-
-                    const MAX_URL_CONTENT_LENGTH = 150000;
-                    if (text.length > MAX_URL_CONTENT_LENGTH) {
-                        text = text.slice(0, MAX_URL_CONTENT_LENGTH) + `\n\n... [내용이 너무 길어 앞 ${MAX_URL_CONTENT_LENGTH}자만 전달합니다.]`;
-                    }
-
-                    urlContext += `\n\n${'─'.repeat(40)}\n🌐 [외부 링크: ${url}]\n${'─'.repeat(40)}\n${text}`;
-                    await ownerChannel.send(`✅ **[Web Fetcher]** \`${url}\` 읽기 완료`);
-                } catch (err: any) {
-                    await ownerChannel.send(`⚠️ **[Web Fetcher]** \`${url}\` 접근 실패: ${err.message}`);
-                }
-            }
-        }
-
-        const intention = analyzeFileIntention(content, attachments.length > 0);
-
-        let modePrompts: any = PROMPTS.MODE_1;
-        if (config.name.includes('주식'))     modePrompts = PROMPTS.MODE_2;
-        if (config.name.includes('블로그'))   modePrompts = PROMPTS.MODE_3;
-        if (config.name.includes('논문'))     modePrompts = PROMPTS.MODE_4;
-        if (config.name.includes('자료 조사')) modePrompts = PROMPTS.MODE_5;
-
-        const arbiterPrompt = modePrompts.ARBITER ?? PROMPTS.ARBITER;
-        const moaPrompt     = modePrompts.MOA     ?? PROMPTS.MOA;
-
-        let stockContext = '';
-        if (config.name.includes('주식')) {
-            const today = new Date();
-            const dateStr = today.toLocaleDateString('ko-KR', {
-                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
-            });
-
-            try {
-                await ownerChannel.send(`🔍 **[데이터 수집]** 실시간 재무 및 기술적 지표를 동기화합니다...`);
-
-                const tickerMatch = content.match(/[A-Za-z]{1,10}/) || content.match(/\d{6}/) || content.match(/[가-힣]+/);
-                
-                if (!tickerMatch) {
-                    await ownerChannel.send(`⚠️ **[검색 실패]** 분석할 주식 종목(티커 또는 종목명)이 감지되지 않았습니다.\n분석을 원하시면 종목명이나 코드를 명확히 포함하여 다시 질문해 주세요. (예: AAPL, 삼성전자, 005930)`);
-                    return; 
-                } else {
-                    const query = tickerMatch[0];
-                    const searchResult = await yahooFinance.search(query);
-                    
-                    const topMatch = searchResult.quotes.find((q: any) => q.isYahooFinance === true || q.quoteType === 'EQUITY' || q.quoteType === 'ETF') || searchResult.quotes[0];
-
-                    if (!topMatch || !topMatch.symbol) {
-                        await ownerChannel.send(`⚠️ **[검색 실패]** '${query}'에 해당하는 유효한 주식 종목을 찾지 못했습니다.\n정확한 종목 코드(티커)나 풀네임을 확인 후 다시 입력해 주세요. (예: TSLA, 005930)`);
-                        return; 
-                    }
-
-                    const symbol = topMatch.symbol;
-                    
-                    const quote = await yahooFinance.quote(symbol) as any;
-
-                    const endDate = new Date();
-                    const startDate = new Date();
-                    startDate.setDate(endDate.getDate() - 100);
-                    const historical = await yahooFinance.historical(symbol, {
-                        period1: startDate, period2: endDate, interval: '1d'
-                    });
-
-                    const quoteSummary = await yahooFinance.quoteSummary(symbol, {
-                        modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData']
-                    }).catch(() => null);
-
-                    stockContext = `\n\n[실시간 시장 및 재무 데이터 (조회일: ${dateStr})]\n` +
-                        `- 종목명: ${quote.longName || quote.shortName} (${symbol})\n` +
-                        `- 현재가: ${quote.regularMarketPrice} ${quote.currency || ''}\n` +
-                        `- 52주 최고/최저: ${quote.fiftyTwoWeekHigh} / ${quote.fiftyTwoWeekLow}\n` +
-                        `- 거래량: ${quote.regularMarketVolume}\n`;
-
-                    if (quoteSummary) {
-                        const sd = quoteSummary.summaryDetail || {};
-                        const ks = quoteSummary.defaultKeyStatistics || {};
-                        const fd = quoteSummary.financialData || {};
-
-                        const formatValue = (val: any) => val ? val.toLocaleString() : 'N/A';
-                        const formatPercent = (val: any) => val ? (val * 100).toFixed(2) + '%' : 'N/A';
-
-                        stockContext += `- 시가총액: ${formatValue(sd.marketCap)}\n` +
-                            `- PER (Trailing): ${formatValue(sd.trailingPE)}, PER (Forward): ${formatValue(sd.forwardPE)}\n` +
-                            `- PBR: ${formatValue(ks.priceToBook)}\n` +
-                            `- EPS (Trailing): ${formatValue(ks.trailingEps)}, EPS (Forward): ${formatValue(ks.forwardEps)}\n` +
-                            `- ROE: ${formatPercent(fd.returnOnEquity)}\n` +
-                            `- 총매출: ${formatValue(fd.totalRevenue)}, 영업이익률: ${formatPercent(fd.operatingMargins)}\n`;
-                    }
-
-                    if (historical.length > 0) {
-                        const closes = historical.map((d: any) => d.close);
-                        const rsiResult = RSI.calculate({ values: closes, period: 14 });
-                        const currentRsi = rsiResult.length > 0 ? rsiResult[rsiResult.length - 1] : null;
-                        const bbResult = BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 });
-                        const currentBb = bbResult.length > 0 ? bbResult[bbResult.length - 1] : null;
-
-                        stockContext += `- 최근 RSI (14일): ${currentRsi !== null ? (currentRsi as number).toFixed(2) : 'N/A'}\n`;
-                        if (currentBb) {
-                            stockContext += `- 볼린저 밴드 (20일): 상단 ${currentBb.upper.toFixed(2)}, 중간 ${currentBb.middle.toFixed(2)}, 하단 ${currentBb.lower.toFixed(2)}\n`;
-                        }
-                    }
-
-                    stockContext += `\n[핵심 지시사항]: 1STEP(재무제표) 및 2STEP(밸류에이션) 분석 시 반드시 위 [실시간 시장 및 재무 데이터]의 수치만을 사용하라. 제공되지 않은 과거 연도의 수치를 임의로 지어내어 분석하는 행위를 엄격히 금지한다.`;
-
-                    await ownerChannel.send(`✅ **[데이터 수집 완료]** ${symbol} 종목의 최신 펀더멘털 및 기술적 데이터를 프롬프트에 주입했습니다.`);
-                }
-            } catch (err: any) {
-                console.error('주식 데이터 조회 실패:', err.message);
-                await ownerChannel.send(`⚠️ **[API 오류]** 종목 데이터 조회 중 오류가 발생했습니다. 종목 코드(티커)가 유효한지 확인하고 잠시 후 다시 시도해 주세요.`);
-                return; 
-            }
-        }
-
-        let attempt = 0;
-        const MAX_RETRIES = 6;
-        let isApproved = false;
-        let isUserStopped = false;
-        let latestCode = '';
-        let latestFeedback = content;
-
-        if (masterId && message.author.id === masterId && content.includes('강제승인')) {
-            await arbiterChannel.send(`🙆‍♂️ **[${config.name}]** 방장 다이렉트 오더. 리뷰를 생략합니다.`);
-            isApproved = true;
-        }
-
-        const history = getHistory(channelId);
-
-        while (attempt < MAX_RETRIES && !isApproved) {
-            if (signal.aborted) { isUserStopped = true; break; }
-            attempt++;
-
-            let ownerInput: string;
-            if (attempt === 1) {
-                ownerInput = `[작업 지시]: ${latestFeedback}`;
-                if (attachedFileContext) ownerInput += `\n\n[My Computer - 첨부 파일 내용]\n아래는 사용자가 첨부한 파일이다.\n${attachedFileContext}`;
-                if (urlContext) ownerInput += `\n\n[Web Fetcher - 외부 링크 내용]\n아래는 사용자가 공유한 외부 링크의 내용이다. 코드가 포함된 경우 변형 없이 원본을 참조하라.\n${urlContext}`;
-                if (stockContext) ownerInput += stockContext;
-                if (intention.wantsFileEdit && attachedLocalPaths.length > 0)
-                    ownerInput += `\n\n[My Computer - 수정 모드]\n첨부 파일을 수정한 결과만 태그 안에 전체 출력하라. 새 파일을 만들지 마라.`;
-            } else {
-                ownerInput = `[최근 피드백을 반영해 수정하세요]:\n${latestFeedback}`;
-            }
-
-            await ownerChannel.sendTyping();
-            const ownerRaw = await callLLM(
-                config.owner.model,
-                config.owner.key,
-                modePrompts.OWNER,
-                ownerInput,
-                attempt === 1 ? history : []
-            );
-
-            if (attempt === 1) {
-                appendHistory(channelId, 'user', ownerInput);
-                appendHistory(channelId, 'assistant', ownerRaw);
-            }
-
-            const codeMatch     = ownerRaw.match(/<CODE>([\s\S]*?)<\/CODE>/s);
-            const analysisMatch = ownerRaw.match(/<ANALYSIS>([\s\S]*?)<\/ANALYSIS>/s);
-
-            if (codeMatch)          latestCode = codeMatch[1].trim();
-            else if (analysisMatch) latestCode = analysisMatch[1].trim();
-            else                    latestCode = ownerRaw.trim();
-
-            await ownerChannel.send(`**(Owner 시도 ${attempt}/${MAX_RETRIES})**`);
-            await sendSplitMessage(ownerChannel, `\`\`\`\n${latestCode}\n\`\`\``);
-
-            if (signal.aborted) { isUserStopped = true; break; }
-
-            await reviewerChannel.sendTyping();
-            const reviewerRaw = await callLLM(config.reviewer.model, config.reviewer.key, modePrompts.REVIEWER, `[Owner 제출물]:\n<CODE>\n${latestCode}\n</CODE>`);
-
-            if (signal.aborted) { isUserStopped = true; break; }
-
-            if (reviewerRaw.includes('PASS') || reviewerRaw.includes('DONE')) {
-                await reviewerChannel.send('✅ **(Reviewer)**: PASS. 승인합니다.');
-                isApproved = true;
-            } else {
-                const feedbackMatch = reviewerRaw.match(/<FEEDBACK>([\s\S]*?)<\/FEEDBACK>/s);
-                latestFeedback = feedbackMatch ? feedbackMatch[1].trim() : reviewerRaw.trim();
-                await reviewerChannel.send('⚠️ **(Reviewer 피드백)**:');
-                await sendSplitMessage(reviewerChannel, latestFeedback);
-                if (attempt >= MAX_RETRIES) break;
-            }
-        }
-
-        if (isUserStopped) {
-            const stopMsg = latestCode.trim() !== ''
-               ? `🛑 **(Owner)** 사용자 요청으로 모든 작업이 중단되었습니다.\n\n중단 시점까지 생성된 결과물은 아래와 같습니다:\n\`\`\`\n${latestCode}\n\`\`\``
-                : `🛑 **(Owner)** 사용자 요청으로 모든 작업이 중단되었습니다.\n생성된 결과물이 없습니다.`;
-            await sendSplitMessage(ownerChannel, stopMsg);
-            return; 
-        }
-
-        let arbiterInputContext = `[요청]: ${content}\n[최종 결과물]:\n${latestCode}\n`;
-        const shouldRunMoA = isApproved && moaState[channelId];
-
-        if (shouldRunMoA && config.moa && config.moa.length > 0) {
-            await arbiterChannel.send(`🧠 **[MoA 가동 중]** 외부 모델에 집단지성 검증을 요청합니다...`);
-            const moaResults = await Promise.all(
-                config.moa.map((m: any) => callLLM(m.model, m.key, moaPrompt, `[결과물]:\n${latestCode}`))
-            );
-            if(moaResults.length > 0) arbiterInputContext += `\n[MoA 1 의견]:\n${moaResults[0]}`;
-            if(moaResults.length > 1) arbiterInputContext += `\n[MoA 2 의견]:\n${moaResults[1]}`;
-        }
-
-        await arbiterChannel.sendTyping();
-        const arbiterFinal = await callLLM(config.arbiter.model, config.arbiter.key, arbiterPrompt, arbiterInputContext);
-        await arbiterChannel.send('👑 **(Arbiter 최종 판정)**:');
-        await sendSplitMessage(arbiterChannel, arbiterFinal);
-
-        if (intention.wantsFileEdit && attachedLocalPaths.length > 0) {
-            await ownerChannel.send(`📨 **(Owner → My Computer)** 원본 파일을 수정된 내용으로 덮어씁니다...`);
-            try {
-                const editFilename = path.basename(attachedLocalPaths[0]);
-                await sendFileToDiscord(ownerChannel, latestCode, editFilename);
-            } catch (err: any) {
-                await ownerChannel.send(`❌ 파일 전송 실패: ${err.message}`);
-            }
-        } else if (intention.wantsFileOutput) {
-            await ownerChannel.send(`📨 **(Owner → My Computer)** 결과물을 파일로 생성하여 저장합니다...`);
-            try {
-                const { filename, content: fileContent } = extractFileFromOutput(latestCode, arbiterFinal, content);
-                const finalFilename = intention.suggestedFilename ?? filename;
-                await sendFileToDiscord(ownerChannel, fileContent, finalFilename);
-            } catch (err: any) {
-                await ownerChannel.send(`❌ 파일 전송 실패: ${err.message}`);
-            }
-        } else {
-            await ownerChannel.send(`📨 **(Owner → 사용자 전달)** 최종 산출물은 아래와 같습니다.`);
-        }
-
-    } catch (error) {
-        console.error('❌ 파이프라인 에러:', error);
-    } finally {
-        abortControllers.delete(channelId);
-        activeTasks.delete(channelId);
-    }
-}
-
-// ─────────────────────────────────────────────
-// 봇 시작
-// ─────────────────────────────────────────────
-async function startSwarms(): Promise<void> {
-    const yf = await import('yahoo-finance2') as any;
-    const YahooFinanceClass = yf.YahooFinance ?? yf.default?.YahooFinance ?? yf.default;
-    yahooFinance = (typeof YahooFinanceClass === 'function')
-        ? new YahooFinanceClass()
-        : YahooFinanceClass;
-
-    const tokenMap: Record<string, string | undefined> = {
-        DISCORD_OWNER_TOKEN:    process.env.DISCORD_OWNER_TOKEN,
-        DISCORD_REVIEWER_TOKEN: process.env.DISCORD_REVIEWER_TOKEN,
-        DISCORD_ARBITER_TOKEN:  process.env.DISCORD_ARBITER_TOKEN,
-    };
-    const missingTokens = Object.entries(tokenMap)
-       .filter(([, v]) => !v || typeof v !== 'string' || v.trim() === '')
-       .map(([k]) => k);
-    if (missingTokens.length > 0) {
-        console.error('❌ 아래 환경 변수가 .env 파일에 없거나 비어 있습니다:');
-        missingTokens.forEach(k => console.error(`   - ${k}`));
-        console.error('💡 .env 파일을 열어 올바른 Discord 봇 토큰을 입력한 뒤 다시 실행하세요.');
-        process.exit(1);
-    }
-
-    ownerBot.on(Events.MessageCreate, handleMessageEvent);
-    reviewerBot.on(Events.MessageCreate, handleMessageEvent);
-    arbiterBot.on(Events.MessageCreate, handleMessageEvent);
-
-    await Promise.all([
-        ownerBot.login(process.env.DISCORD_OWNER_TOKEN!),
-        reviewerBot.login(process.env.DISCORD_REVIEWER_TOKEN!),
-        arbiterBot.login(process.env.DISCORD_ARBITER_TOKEN!),
-    ]);
-
-    console.log('👥 4채널 Tribunal + MoA + Web Fetcher 시스템 가동 완료.');
-}
-
-startSwarms();
