@@ -79,18 +79,66 @@ function getDesktopPath(): string {
 }
 
 // ─────────────────────────────────────────────
+// ✅ My Computer: 자율 로컬 파일 스캐너 (내부 시스템 탐색기)
+// ─────────────────────────────────────────────
+async function searchAndReadLocalFiles(keyword: string): Promise<{found: boolean, text: string}> {
+    const homeDir = os.homedir();
+    let cmd = '';
+    
+    // OS 호환성 대응 탐색 쿼리 구성
+    if (os.platform() === 'win32') {
+        cmd = `dir "${homeDir}\\*${keyword}*" /s /b /a:-d | findstr /v "node_modules \\.git"`;
+    } else {
+        cmd = `find "${homeDir}" -type f -iname "*${keyword}*" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/Library/*" | head -n 3`;
+    }
+
+    try {
+        // 10초 타임아웃 락 적용 (전체 디스크 스캔 무한 로딩 방지)
+        const result = execSync(cmd, { stdio: ['pipe', 'pipe', 'ignore'], timeout: 10000 }).toString().trim();
+        const files = result.split('\n').filter(p => p.trim());
+        
+        if (files.length === 0) {
+            return { found: false, text: `[로컬 탐색 실패] '${keyword}'와 일치하는 파일을 찾을 수 없습니다.`};
+        }
+
+        let context = `\n[My Computer - 자동 로컬 파일 탐색 결과 (검색어: ${keyword})]\n`;
+        let fetchedCount = 0;
+        
+        for (let i = 0; i < Math.min(files.length, 2); i++) {
+            const filePath = files[i].trim();
+            context += `\n▶ 찾은 파일 시스템 경로: ${filePath}\n`;
+            try {
+                const fileStat = await fsp.stat(filePath);
+                if (fileStat.size > 200000) {
+                    context += `(파일 크기가 초과되어 생략됨: ${fileStat.size} bytes)\n`;
+                    continue;
+                }
+                const fileContent = await fsp.readFile(filePath, 'utf-8');
+                context += `\`\`\`\n${fileContent.slice(0, 15000)}${fileContent.length > 15000 ? '\n...[파일이 길어 생략됨]' : ''}\n\`\`\`\n`;
+                fetchedCount++;
+            } catch(err: any) {
+                context += `(읽기 권한 거부 또는 실패: ${err.message})\n`;
+            }
+        }
+        return { found: fetchedCount > 0, text: context };
+    } catch (err: any) {
+        return { found: false, text: `[로컬 탐색 중단] 탐색 중 에러 또는 타임아웃 발생 (너무 넓은 범위 검색)`};
+    }
+}
+
+// ─────────────────────────────────────────────
 // ✅ Discord 파일 첨부 전송
 // ─────────────────────────────────────────────
 async function sendFileToDiscord(channel: any, content: string, filename: string): Promise<void> {
     const buffer = Buffer.from(content, 'utf-8');
     await channel.send({
-        content: `💾 **[파일 전송 완료]** 아래 파일을 클릭해 다운로드하세요 → \`${filename}\``,
+        content: `💾 **[디스코드 백업 전송]** 아래 파일을 클릭해 다운로드하세요 → \`${filename}\``,
         files: [{ attachment: buffer, name: filename }],
     });
 }
 
 // ─────────────────────────────────────────────
-// ✅ My Computer: Discord 첨부파일 읽기
+// ✅ My Computer: Discord 첨부파일 파싱 모듈 (쉴드 적용)
 // ─────────────────────────────────────────────
 async function myComputerReadAttachment(attachment: Attachment): Promise<{ content: string; filename: string; localPath: string; }> {
     const filename = attachment.name ?? 'unknown_file';
@@ -168,7 +216,7 @@ async function myComputerReadAttachment(attachment: Attachment): Promise<{ conte
         content = `[파일 내용 추출 중 오류: ${err.message}.\n로컬 경로: ${localPath}]`;
     }
 
-    const MAX_CONTENT_LENGTH = 150000;
+    const MAX_CONTENT_LENGTH = 300000;
     if (content.length > MAX_CONTENT_LENGTH) {
         content = content.slice(0, MAX_CONTENT_LENGTH) + `\n\n... [파일 내용이 길어 앞 ${MAX_CONTENT_LENGTH}자만 전달합니다.\n전체 파일은 로컬에 저장되어 있습니다.]`;
     }
@@ -176,63 +224,80 @@ async function myComputerReadAttachment(attachment: Attachment): Promise<{ conte
 }
 
 // ─────────────────────────────────────────────
-// ✅ My Computer: 사용자 요청 의도 분석
+// ✅ My Computer: 사용자 요청 의도 분석 (로컬 저장 경로/포맷 감지)
 // ─────────────────────────────────────────────
 interface FileIntention {
     wantsFileOutput: boolean;
     wantsFileEdit: boolean;
     savePath?: string;
     suggestedFilename?: string;
+    forcedExtension?: string;
 }
 
 function analyzeFileIntention(userContent: string, hasAttachments: boolean): FileIntention {
     const lower = userContent.toLowerCase();
-    const editKeywords = ['수정', '편집', '고쳐', '바꿔', '변경', '업데이트', '수정해줘', '수정해 줘', 'edit', 'modify', 'update', 'fix', 'change', 'revise', 'rewrite'];
+    const editKeywords = ['수정', '편집', '고쳐', '바꿔', '변경', '업데이트', '수정해줘', '수정해 줘', 'edit', 'modify'];
     const wantsFileEdit = hasAttachments && editKeywords.some(k => lower.includes(k));
 
-    const createKeywords = ['파일로', '파일 만들', '저장해', '저장 해', '만들어줘', '만들어 줘', '생성해', '작성해줘', '작성해 줘', '문서로', '코드 짜줘', '코드 작성', '파일로 저장', '파일로 만들', '파일로 출력', 'save', 'create file', 'write file', 'generate file', 'export to file'];
+    const createKeywords = ['파일로', '파일 만들', '저장해', '저장 해', '저장시키', '만들어줘', '만들어 줘', '생성해', '작성해줘', '작성해 줘', '문서로', '코드 짜줘', '코드 작성', '파일로 저장', '파일로 만들', '파일로 출력', 'save', 'export to file'];
     const wantsFileOutput = createKeywords.some(k => lower.includes(k));
 
     let savePath: string | undefined;
-    const absPathMatch = userContent.match(/(?:에|에다가|으로|로|in|to|at)\s+([A-Za-z]:\\[^\s]+|\/[^\s]+|~\/[^\s]*)/);
     
-    if (absPathMatch) savePath = absPathMatch[1];
-    else if (lower.includes('다운로드')) savePath = path.join(os.homedir(), 'Downloads');
-    else if (lower.includes('문서')) savePath = path.join(os.homedir(), 'Documents');
-    else if (lower.includes('바탕화면') || lower.includes('데스크탑') || lower.includes('desktop')) savePath = getDesktopPath();
+    // 절대 경로 추출 (Windows: C:\path, Linux: /path, Mac: ~/path)
+    const absPathMatch = userContent.match(/(?:경로\s*)?([A-Za-z]:\\[^\s]+|\/[^\s]+|~\/[^\s]*)\s*(?:폴더|디렉토리|경로|위치)?(?:에|에다가|으로|로)/);
+    
+    if (absPathMatch) {
+        savePath = absPathMatch[1];
+    } else if (lower.includes('다운로드')) {
+        savePath = path.join(os.homedir(), 'Downloads');
+    } else if (lower.includes('문서')) {
+        savePath = path.join(os.homedir(), 'Documents');
+    } else if (lower.includes('바탕화면') || lower.includes('데스크탑') || lower.includes('desktop')) {
+        savePath = getDesktopPath();
+    }
     
     const filenameMatch = userContent.match(/["']([^"']+\.[a-zA-Z0-9]{1,10})["']/) || userContent.match(/(\S+\.(txt|md|py|js|ts|json|csv|xlsx|docx|pdf|html|css|sh|yaml|yml|sql|java|cpp|go|rs))\b/i);
     const suggestedFilename = filenameMatch ? filenameMatch[1] : undefined;
 
-    return { wantsFileOutput, wantsFileEdit, savePath, suggestedFilename };
+    // 강제 변환 확장자 추출 (예: ".json 파일로")
+    const extMatch = userContent.match(/(?:\.([a-zA-Z0-9]+)\s*(?:형식|포맷|확장자|파일)?로\s*(?:저장|만들어|변환|출력))/i);
+    const forcedExtension = extMatch ? `.${extMatch[1].toLowerCase()}` : undefined;
+
+    return { wantsFileOutput, wantsFileEdit, savePath, suggestedFilename, forcedExtension };
 }
 
 // ─────────────────────────────────────────────
-// ✅ My Computer: 결과물 추출
+// ✅ My Computer: 결과물 추출기
 // ─────────────────────────────────────────────
 interface ExtractedFile {
     filename: string;
     content: string;
 }
 
-function extractFileFromOutput(latestCode: string, arbiterFinal: string, userMessage: string): ExtractedFile {
+function extractFileFromOutput(latestCode: string, arbiterFinal: string, userMessage: string, forcedExtension?: string): ExtractedFile {
     const lower = userMessage.toLowerCase();
     let ext = '.txt';
-    if (lower.includes('.py') || lower.includes('python')) ext = '.py';
-    else if (lower.includes('.ts') || lower.includes('typescript')) ext = '.ts';
-    else if (lower.includes('.js') || lower.includes('javascript')) ext = '.js';
-    else if (lower.includes('.java')) ext = '.java';
-    else if (lower.includes('.go')) ext = '.go';
-    else if (lower.includes('.rs') || lower.includes('rust')) ext = '.rs';
-    else if (lower.includes('.cpp') || lower.includes('c++')) ext = '.cpp';
-    else if (lower.includes('.json')) ext = '.json';
-    else if (lower.includes('.yaml') || lower.includes('.yml')) ext = '.yaml';
-    else if (lower.includes('.sql')) ext = '.sql';
-    else if (lower.includes('.html')) ext = '.html';
-    else if (lower.includes('.css')) ext = '.css';
-    else if (lower.includes('.sh') || lower.includes('쉘스크립트')) ext = '.sh';
-    else if (lower.includes('.csv')) ext = '.csv';
-    else if (lower.includes('.md') || lower.includes('마크다운') || lower.includes('블로그') || lower.includes('보고서') || lower.includes('논문') || lower.includes('글') || lower.includes('분석')) ext = '.md';
+    
+    if (forcedExtension) {
+        ext = forcedExtension;
+    } else {
+        if (lower.includes('.py') || lower.includes('python')) ext = '.py';
+        else if (lower.includes('.ts') || lower.includes('typescript')) ext = '.ts';
+        else if (lower.includes('.js') || lower.includes('javascript')) ext = '.js';
+        else if (lower.includes('.java')) ext = '.java';
+        else if (lower.includes('.go')) ext = '.go';
+        else if (lower.includes('.rs') || lower.includes('rust')) ext = '.rs';
+        else if (lower.includes('.cpp') || lower.includes('c++')) ext = '.cpp';
+        else if (lower.includes('.json')) ext = '.json';
+        else if (lower.includes('.yaml') || lower.includes('.yml')) ext = '.yaml';
+        else if (lower.includes('.sql')) ext = '.sql';
+        else if (lower.includes('.html')) ext = '.html';
+        else if (lower.includes('.css')) ext = '.css';
+        else if (lower.includes('.sh') || lower.includes('쉘스크립트')) ext = '.sh';
+        else if (lower.includes('.csv')) ext = '.csv';
+        else if (lower.includes('.md') || lower.includes('마크다운') || lower.includes('블로그') || lower.includes('보고서') || lower.includes('논문') || lower.includes('글') || lower.includes('분석')) ext = '.md';
+    }
     
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `output_${ts}${ext}`;
@@ -242,7 +307,7 @@ function extractFileFromOutput(latestCode: string, arbiterFinal: string, userMes
 }
 
 // ─────────────────────────────────────────────
-// ✅ 마크다운 코드 블록 깨짐 방지 Splitter 적용
+// ✅ 일반 메시지 분할 전송 (1900자 제한 처리)
 // ─────────────────────────────────────────────
 async function sendSplitMessage(channel: any, text: string): Promise<void> {
     if (!text) return;
@@ -275,19 +340,51 @@ async function sendSplitMessage(channel: any, text: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────
-// LLM 통합 호출 함수
+// ✅ 스마트 메시지 샌더 (대규모 텍스트 강제 파일 변환 쉴드)
+// ─────────────────────────────────────────────
+async function sendSmartMessage(channel: any, text: string, filenamePrefix: string, isCode: boolean = true): Promise<void> {
+    if (!text) return;
+    const LARGE_THRESHOLD = 15000; 
+    
+    if (text.length >= LARGE_THRESHOLD) {
+        const buffer = Buffer.from(text, 'utf-8');
+        const prompt = `[필수 지시사항 - 반드시 읽을 것]\n\n첨부 파일은 약 ${text.length}자의 완성된 소스 코드입니다.\n이 코드는 절대 잘리거나 누락된 것이 아닙니다.\n\n① 첨부 파일 전체를 끝까지 읽어주세요.\n② 읽기가 완료되면 "전체 코드 파악 완료"라고만 답해주세요.\n③ 내가 수정 요청을 할 때까지 절대 먼저 코드를 수정하지 마세요.\n④ 중간에 "코드가 없는 것 같습니다" 또는 "불완전합니다" 라고 \n   판단하지 마세요. 파일 전체가 하나의 완성본입니다.`;
+        
+        const ext = isCode ? '.ts' : '.md';
+        await channel.send({
+            content: prompt,
+            files: [{ attachment: buffer, name: `${filenamePrefix}_${Date.now()}${ext}` }]
+        });
+    } else {
+        if (isCode) {
+            await sendSplitMessage(channel, `\`\`\`typescript\n${text}\n\`\`\``);
+        } else {
+            await sendSplitMessage(channel, text);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// LLM 통합 호출 함수 (o1/o3-mini 완벽 호환 적용)
 // ─────────────────────────────────────────────
 async function callLLM(model: string, apiKey: string | undefined, systemPrompt: string, userPrompt: string, history: ChatMessage[] = []): Promise<string> {
     if (!apiKey) return `Error: ${model} API Key가 설정되지 않았습니다.`;
     
     try {
-        if (model.includes('gpt')) {
+        if (model.includes('gpt') || model.includes('o1') || model.includes('o3')) {
             const client = new OpenAI({ apiKey });
-            const messages: any[] = [
-                { role: 'system', content: systemPrompt },
-                ...history,
-                { role: 'user', content: userPrompt }
-            ];
+            const messages: any[] = [];
+            
+            if (model.includes('o1') || model.includes('o3')) {
+                messages.push({ role: 'user', content: `[System Instructions]\n${systemPrompt}` });
+                messages.push(...history);
+                messages.push({ role: 'user', content: userPrompt });
+            } else {
+                messages.push({ role: 'system', content: systemPrompt });
+                messages.push(...history);
+                messages.push({ role: 'user', content: userPrompt });
+            }
+            
             const res = await client.chat.completions.create({ model, messages });
             return res.choices[0]?.message?.content || '';
         } else if (model.includes('claude')) {
@@ -334,7 +431,7 @@ async function callLLM(model: string, apiKey: string | undefined, systemPrompt: 
                 ...history,
                 { role: 'user', content: userPrompt }
             ];
-            const res = await client.chat.completions.create({ model: 'deepseek-v4-pro', messages });
+            const res = await client.chat.completions.create({ model, messages });
             return res.choices[0]?.message?.content || '';
         } else if (model.includes('glm')) {
             const client = new OpenAI({ apiKey, baseURL: 'https://open.bigmodel.cn/api/paas/v4/' });
@@ -354,16 +451,13 @@ async function callLLM(model: string, apiKey: string | undefined, systemPrompt: 
 }
 
 // ─────────────────────────────────────────────
-// 채널 설정
+// 채널 설정 (다양성 극대화 및 중복 최소화)
 // ─────────────────────────────────────────────
 const CHANNEL_CONFIGS: Record<string, any> = {
     MODE_1: {
         name: "소스코드 개발 모드",
-        // 코딩 효율이 매우 높고 저렴한 deepseek-v4-flash를 Owner로 배치하여 루프 비용 최소화
         owner: { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_OWNER_API_KEY },
-        // 문법 및 버그 캐치 속도가 빠른 gpt-4o-mini 유지
         reviewer: { model: "gpt-4o-mini", key: process.env.OPENAI_REVIEWER_API_KEY },
-        // 논리적 구조와 아키텍처를 최종 조율하기 위해 코딩 성능이 최상위권인 claude-sonnet-4-6 유지
         arbiter: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_ARBITER_API_KEY },
         moa: [
             { model: "gemini-3.5-flash", key: process.env.GEMINI_MOA_API_KEY },
@@ -372,38 +466,28 @@ const CHANNEL_CONFIGS: Record<string, any> = {
     },
     MODE_2: {
         name: "주식 및 금융 데이터 분석 모드",
-        // 대용량 실시간 주식 데이터 파싱을 위해 컨텍스트 윈도우가 크고 빠른 gemini-3.5-flash 유지
         owner: { model: "gemini-3.5-flash", key: process.env.GEMINI_OWNER_API_KEY },
-        // 수치적 오류와 논리적 비약을 날카롭게 검증하기 위해 추론 특화 소형 모델인 o3-mini 투입 (비용 절감 및 논리력 극대화)
         reviewer: { model: "o3-mini", key: process.env.OPENAI_REVIEWER_API_KEY },
-        // 복잡한 금융 데이터 종합 및 리포트 포맷팅 성능을 위해 gpt-5.4 유지
         arbiter: { model: "gpt-5.4", key: process.env.OPENAI_ARBITER_API_KEY }, 
         moa: [
             { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_MOA_API_KEY },
-            { model: "glm-5.1", key: process.env.GLM_MOA_API_KEY },
+            { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_MOA_API_KEY },
         ],
     },
     MODE_3: {
         name: "블로그 및 마케팅 콘텐츠 생성 모드",
-        // 기계적인 느낌(AI Vibe)이 가장 적은 자연스러운 텍스트 생성을 위해 claude-haiku 유지
         owner: { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_OWNER_API_KEY },
-        // 가독성 및 키워드 검증용으로 저비용 고속 모델인 gemini-3.5-flash 유지
-        reviewer: { model: "gemini-3.5-flash", key: process.env.GEMINI_REVIEWER_API_KEY },
-        // 최종 텍스트 교정 및 다듬기를 위해 한 단계 업그레이드된 gpt-5.4-mini 투입 (가성비+성능)
-        arbiter: { model: "gpt-5.4-mini", key: process.env.OPENAI_ARBITER_API_KEY },
+        reviewer: { model: "gpt-4o-mini", key: process.env.OPENAI_REVIEWER_API_KEY },
+        arbiter: { model: "gemini-3.5-flash", key: process.env.GEMINI_ARBITER_API_KEY },
         moa: [
-            // 목록에 없는 deepseek-chat 대신 가용한 deepseek-v4-flash로 교정
             { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_MOA_API_KEY },
             { model: "glm-5.1", key: process.env.GLM_MOA_API_KEY },
         ],
     },
     MODE_4: {
         name: "학술 논문 제작 및 전문 번역 모드",
-        // 다국어 처리 및 번역 초안 작성에 유리한 gpt-4o-mini 유지
         owner: { model: "gpt-4o-mini", key: process.env.OPENAI_OWNER_API_KEY },
-        // 학술적 어조(Tone & Manner) 교정에 강점을 보이는 claude-haiku 유지
         reviewer: { model: "claude-haiku-4-5-20251001", key: process.env.CLAUDE_REVIEWER_API_KEY },
-        // 논리적 무결성 및 학술적 깊이를 보장하기 위해 추론 특화 고성능 모델 deepseek-v4-pro 유지
         arbiter: { model: "deepseek-v4-pro", key: process.env.DEEPSEEK_ARBITER_API_KEY },
         moa: [
             { model: "gemini-3.5-flash", key: process.env.GEMINI_MOA_API_KEY },
@@ -412,16 +496,12 @@ const CHANNEL_CONFIGS: Record<string, any> = {
     },
     MODE_5: {
         name: "심층 자료 조사 모드",
-        // 방대한 문서를 다루므로 컨텍스트 비용이 저렴한 gemini-3.5-flash로 상향 조정 (lite 대비 성능 확보)
         owner: { model: "gemini-3.5-flash", key: process.env.GEMINI_OWNER_API_KEY },
-        // 팩트 체크 및 수치 검증 성능을 극대화하기 위해 o3-mini 투입
         reviewer: { model: "o3-mini", key: process.env.OPENAI_REVIEWER_API_KEY },
-        // 파편화된 자료를 마크다운 보고서로 완벽하게 종합하는 claude-sonnet-4-6 유지
         arbiter: { model: "claude-sonnet-4-6", key: process.env.CLAUDE_ARBITER_API_KEY },
         moa: [
-            // 보조 의견 제시에 무거운 pro 대신 flash 모델로 변경하여 비용 최적화
             { model: "deepseek-v4-flash", key: process.env.DEEPSEEK_MOA_API_KEY },
-            { model: "glm-5.1", key: process.env.GLM_MOA_API_KEY },
+            { model: "gpt-4o-mini", key: process.env.OPENAI_MOA_API_KEY },
         ],
     },
 };
@@ -483,7 +563,7 @@ LLM 출력 토큰 제한을 방지하기 위해 오직 '수정되거나 추가�
 너는 Reviewer의 리스크 지적 사항을 겸허히 수용하여 분석을 고도화해야 한다.
 Reviewer가 제시한 리스크와 지적을 100% 반영하되, 기존 분석의 유효한 데이터 뼈대는 유지하면서 수치적 오류와 간과된 리스크를 완벽하게 보완한 최종 금융 리포트를 작성해라. 
 사설은 생략하고 명확한 데이터 분석 본론만 깔끔하게 출력해라.
-[치명적 경고]: 당신이 자체적으로 기억하고 있는 과거(작년 등)의 주식 가격을 현재가인 것처럼 지어내어 출력하는 행위를 엄격히 금지합니다. 오직 시스템이 주입해준 실시간 데이터의 가격만 사용하십시오.`; },
+[치명적 경고]: 당신이 자체적으로 기억하고 있는 과거(작년 등)의 정보를 현재 상황인 것처럼 지어내어 출력하는 행위를 엄격히 금지합니다. 제공된 실시간 데이터와 최신 뉴스만을 기반으로 서술하십시오.`; },
         
         get REVIEWER() { 
             const currentYear = new Date().getFullYear();
@@ -522,7 +602,7 @@ Reviewer가 제시한 가독성이나 키워드 피드백을 100% 반영하되, 
     MODE_4: {
         get OWNER() { return `너는 옥스퍼드 대학 출신의 학술 논문 작성이자 전문 번역가(Owner)다.
 너는 사용자가 제시한 학술 연구 요구사항이나 원문을 바탕으로 고도의 학술적 톤앤매너를 갖춘 논문 초안 및 번역본을 작성해야 한다.
-너는 Reviewer의 학술적 지적 사항을 겸허히 수용하여 텍스트 정제해야 한다.
+너는 Reviewer의 학술적 지적 사항을 겸허히 수용하여 텍스트를 정제해야 한다.
 Reviewer가 제시한 논리적 허점이나 오역 지적을 100% 반영하되, 연구의 핵심 명제와 학술적 가치는 유지하면서 전문 용어 오류와 문맥을 완벽하게 개선한 수정본을 출력해라.
 불필요한 인사나 변명은 생략하고 실제 학술지 제출용 본문만 깔끔하게 출력해라.
 ${getStrictTimeEnforcement()}`; },
@@ -634,22 +714,38 @@ async function handleMessageEvent(message: Message): Promise<void> {
         let attachedFileContext = '';
         let attachedLocalPaths: string[] = [];
 
-        // 1. 파일 첨부 처리
+        // ✅ 1. 자율 로컬 파일 검색 시스템 (파일 찾아줘, 검색해줘 등 감지)
+        const searchKeywordMatch = content.match(/([a-zA-Z0-9_.-가-힣]+)\s*(파일|문서).*?(찾아|검색|불러와|읽어|어디)/i);
+        if (searchKeywordMatch) {
+            const keyword = searchKeywordMatch[1];
+            await ownerChannel.send(`🔍 **[My Computer]** 사용자의 지시에 따라 로컬 파일 시스템에서 \`${keyword}\` 파일을 자율 탐색합니다...`);
+            const searchResult = await searchAndReadLocalFiles(keyword);
+            
+            attachedFileContext += `\n\n${searchResult.text}`;
+            if (searchResult.found) {
+                await ownerChannel.send(`✅ **[My Computer]** 로컬 파일 탐색 및 내용 추출 완료`);
+            } else {
+                await ownerChannel.send(`⚠️ **[My Computer]** 로컬 디렉토리에서 지정한 파일을 찾지 못했습니다.`);
+            }
+        }
+
+        // 2. 파일 첨부 처리 (파싱 쉴드 적용)
         if (attachments.length > 0) {
-            await ownerChannel.send(`📎 **[My Computer]** 첨부 파일 ${attachments.length}개를 감지했습니다. 내용을 읽는 중...`);
+            await ownerChannel.send(`📎 **[My Computer]** 첨부 파일 ${attachments.length}개를 감지했습니다. 내용을 파싱합니다...`);
             for (const attachment of attachments) {
                 try {
                     const { content: fileContent, filename, localPath } = await myComputerReadAttachment(attachment);
                     attachedLocalPaths.push(localPath);
-                    attachedFileContext += `\n\n${'─'.repeat(40)}\n📄 [첨부 파일: ${filename}]\n${'─'.repeat(40)}\n${fileContent}`;
-                    await ownerChannel.send(`✅ **[My Computer]** \`${filename}\` 읽기 완료`);
+                    // AI가 코드를 누락된 것으로 오해하지 않도록 강력한 경고 주입
+                    attachedFileContext += `\n\n${'─'.repeat(40)}\n📄 [첨부 파일: ${filename}]\n⚠️ [시스템 강력 경고]: 아래 제공되는 파일의 내용은 절대로 중간에 잘리거나 누락된 것이 아닌, 100% 완벽한 전체 코드/문서입니다. "코드가 불완전하다"거나 "나머지 부분을 제공해달라"고 판단하는 오류(할루시네이션)를 절대 범하지 마십시오. 전체 구조를 완벽히 숙지하십시오.\n${'─'.repeat(40)}\n${fileContent}`;
+                    await ownerChannel.send(`✅ **[My Computer]** \`${filename}\` 파싱 완료 (용량 한계 및 잘림 방지 쉴드 적용됨)`);
                 } catch (err: any) {
                     await ownerChannel.send(`⚠️ **[My Computer]** \`${attachment.name}\` 읽기 실패: ${err.message}`);
                 }
             }
         }
 
-        // 2. 외부 링크(URL) 처리
+        // 3. 외부 링크(URL) 처리
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = content.match(urlRegex);
         let urlContext = '';
@@ -710,43 +806,58 @@ async function handleMessageEvent(message: Message): Promise<void> {
             try {
                 await ownerChannel.send(`🔍 **[의도 분석]** 요청하신 주식 종목을 파악하고 있습니다...`);
                 
-                // 1. LLM을 이용한 강력한 종목 추천 및 추출 (할루시네이션 방지 핵심 코드)
-                const extractionSystemPrompt = `너는 사용자의 질문을 분석하여 검색할 주식 종목 키워드를 추출하는 주식 검색 API 에이전트다. 
-[핵심 지시사항]
-1. 사용자가 특정 종목(예: 테슬라, 삼성전자)을 물어보았다면 해당 종목명이나 티커를 쉼표로 구분해 반환해라.
-2. 사용자가 "주식 3개 추천해줘", "투자할만한 주식 알려줘" 등 종목 추천을 요구했다면, 현재 시점에서 유망하다고 판단되는 실제 상장 주식 종목을 네가 직접 골라서 쉼표로 구분해 반환해라. (예: 삼성전자, SK하이닉스, 현대차)
-3. 오직 쉼표로 구분된 종목명만 출력하고, 인사말이나 부가 설명은 절대 하지 마라.
-4. 주식과 완전히 무관한 질문일 경우에만 "NONE"을 출력해라.`;
+                const extractionSystemPrompt = `사용자의 질문에서 주식 종목명이나 티커만 추출하세요.
+- 특정 종목이 지정되었다면 해당 종목명만 쉼표로 구분하여 출력 (예: 삼성전자, AAPL)
+- 추천 요청이면 현재 유망한 주식 3개를 골라 쉼표로 구분하여 출력
+- 무관한 질문이면 NONE 출력
+- 다른 설명, 인사말, 마크다운 기호는 절대 추가하지 마세요.`;
                 
-                const extractedRaw = await callLLM(config.reviewer.model, config.reviewer.key, extractionSystemPrompt, `[사용자 메시지]: ${content}`);
-                const extractedStocks = extractedRaw.replace(/[^A-Za-z0-9가-힣.,\s]/g, '').trim();
+                let extractedRaw = await callLLM(config.owner.model, config.owner.key, extractionSystemPrompt, `[사용자 메시지]: ${content}`);
+                
+                if (extractedRaw.startsWith('Error:')) {
+                    extractedRaw = content; 
+                }
 
-                if (extractedStocks === 'NONE' || extractedStocks === '') {
+                let cleanExtracted = extractedRaw.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').replace(/["']/g, '');
+                if (cleanExtracted.includes('\n')) cleanExtracted = cleanExtracted.split('\n')[0]; 
+                cleanExtracted = cleanExtracted.replace(/[^A-Za-z0-9가-힣,\s]/g, '').trim();
+
+                if (cleanExtracted.toUpperCase().includes('NONE') || cleanExtracted === '') {
                     await ownerChannel.send(`⚠️ **[실시간 데이터 미지원]** 특정 종목이 명시되지 않아 실시간 데이터를 수집할 수 없습니다. 과거 시장 데이터를 바탕으로 거시적 관점의 분석 및 전략을 제공합니다.`);
                     stockContext = `\n\n[시스템 경고]: 사용자가 특정 종목을 지정하지 않아 실시간 주식 데이터를 제공하지 못했습니다.
 과거 데이터를 마치 현재(${currentYear}년)의 가격이나 수치인 것처럼 임의로 지어내어 대답하는 것을 엄격히 금지합니다.
 "특정 종목을 지정해주시면 실시간 데이터를 분석해 드립니다"라고 명시한 뒤, 현재 시장의 매크로 트렌드나 일반적인 투자 전략, 섹터 전망 위주로 답변을 진행하세요. 특정 종목을 추천할 경우 가격은 생략하세요.`;
                 } else {
-                    const stocks = extractedStocks.split(',').map(s => s.trim()).filter(s => s).slice(0, 3); // 최대 3개 종목으로 제한
-                    await ownerChannel.send(`🔍 **[데이터 수집]** 감지된 종목(${stocks.join(', ')})의 실시간 재무 및 기술적 지표를 동기화합니다...`);
+                    const stocks = cleanExtracted.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
+                    await ownerChannel.send(`🔍 **[데이터 수집]** 감지된 종목(${stocks.join(', ')})의 실시간 재무, 기술적 지표 및 최신 뉴스를 동기화합니다...`);
                     
                     stockContext = `\n\n[실시간 시장 및 재무 데이터 (조회일: ${dateStr})]\n`;
                     let fetchedCount = 0;
 
-                    for (const stock of stocks) {
+                    for (let stock of stocks) {
+                        const safeQuery = stock.replace(/[^A-Za-z0-9가-힣\s]/g, '').trim();
+                        if (!safeQuery) continue;
+
                         try {
-                            const searchResult = await yahooFinance.search(stock);
-                            const topMatch = searchResult.quotes.find((q: any) => q.isYahooFinance === true || q.quoteType === 'EQUITY' || q.quoteType === 'ETF') || searchResult.quotes[0];
+                            const searchResult = await yahooFinance.search(safeQuery);
+                            const topMatch = searchResult?.quotes?.find((q: any) => q.isYahooFinance === true || q.quoteType === 'EQUITY' || q.quoteType === 'ETF') || searchResult?.quotes?.[0];
 
                             if (topMatch && topMatch.symbol) {
                                 const symbol = topMatch.symbol;
-                                const quote = await yahooFinance.quote(symbol) as any;
+                                const quote = await yahooFinance.quote(symbol).catch(() => null);
+                                if (!quote) continue;
+
                                 const endDate = new Date();
                                 const startDate = new Date();
                                 startDate.setDate(endDate.getDate() - 100);
-                                const historical = await yahooFinance.historical(symbol, { period1: startDate, period2: endDate, interval: '1d' });
+                                const historical = await yahooFinance.historical(symbol, { period1: startDate, period2: endDate, interval: '1d' }).catch(() => []);
                                 const quoteSummary = await yahooFinance.quoteSummary(symbol, { modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'] }).catch(() => null);
                                 
+                                let newsText = '';
+                                if (searchResult.news && searchResult.news.length > 0) {
+                                    newsText = searchResult.news.slice(0, 3).map((n: any) => `  * ${n.title}`).join('\n');
+                                }
+
                                 stockContext += `\n▶ [${quote.longName || quote.shortName} (${symbol})]\n`;
                                 stockContext += `- 현재가: ${quote.regularMarketPrice} ${quote.currency || ''}\n`;
                                 stockContext += `- 52주 최고/최저: ${quote.fiftyTwoWeekHigh} / ${quote.fiftyTwoWeekLow}\n`;
@@ -767,10 +878,12 @@ async function handleMessageEvent(message: Message): Promise<void> {
                                     const currentRsi = rsiResult.length > 0 ? rsiResult[rsiResult.length - 1] : null;
                                     stockContext += `- 최근 RSI (14일): ${currentRsi !== null ? (currentRsi as number).toFixed(2) : 'N/A'}\n`;
                                 }
+                                
+                                stockContext += `- 최신 관련 뉴스 헤드라인:\n${newsText || '  (최신 뉴스 없음)'}\n`;
                                 fetchedCount++;
                             }
                         } catch (err: any) {
-                            console.error(`[${stock}] 종목 데이터 조회 실패:`, err.message);
+                            console.error(`[${safeQuery}] 종목 데이터 조회 실패:`, err.message);
                         }
                     }
 
@@ -778,13 +891,12 @@ async function handleMessageEvent(message: Message): Promise<void> {
                         await ownerChannel.send(`⚠️ 감지된 종목에 대한 실시간 데이터를 찾지 못했습니다.`);
                         stockContext += `\n[시스템 경고]: 실시간 데이터 조회에 모두 실패했습니다. 구체적인 가격 제시는 피하고 거시적인 분석을 제공하세요.`;
                     } else {
-                        // 2. 최고 중요 할루시네이션(거짓말) 방지 지시문 강화
                         stockContext += `\n[🚨 최고 중요 지시사항 🚨]: 
-현재 연도는 ${currentYear}년입니다.
-AI 모델의 고질적인 문제인 '과거 데이터(작년 주가 등)를 현재 가격인 것처럼 꾸며내어 말하는 행위(할루시네이션)'를 '절대' 금지합니다.
-주가를 언급하거나 분석할 때는 반드시 위 [실시간 시장 및 재무 데이터]에 제공된 '현재가' 수치만을 그대로 복사해서 사용하십시오.
-만약 위 데이터에 없는 종목을 추가로 언급해야 한다면, 주가를 임의로 지어내지 말고 "실시간 가격 정보 없음"이라고 명시하십시오.`;
-                        await ownerChannel.send(`✅ **[수집 완료]** ${fetchedCount}개 종목의 최신 펀더멘털 데이터를 프롬프트에 주입했습니다.`);
+1. 현재 연도는 ${currentYear}년입니다.
+2. 당신의 과거 학습 데이터(작년 등)를 기반으로 기업의 경쟁력이나 시장 동향을 서술하는 것은 치명적인 오류(할루시네이션)입니다.
+3. 기업의 현황은 오직 위에 제공된 [최신 관련 뉴스 헤드라인]과 [실시간 재무 데이터]만을 근거로 분석하십시오.
+4. 만약 제공된 데이터나 뉴스만으로 충분한 분석이 어렵다면, 과거 정보를 지어내지 말고 "최신 세부 정보 부족으로 제한적 분석을 제공합니다"라고 솔직하게 명시하십시오.`;
+                        await ownerChannel.send(`✅ **[수집 완료]** ${fetchedCount}개 종목의 최신 펀더멘털 데이터 및 뉴스 헤드라인을 프롬프트에 주입했습니다.`);
                     }
                 }
             } catch (err: any) {
@@ -814,10 +926,16 @@ AI 모델의 고질적인 문제인 '과거 데이터(작년 주가 등)를 현�
             let ownerInput: string;
             if (attempt === 1) {
                 ownerInput = `[작업 지시]: ${latestFeedback}`;
-                if (attachedFileContext) ownerInput += `\n\n[My Computer - 첨부 파일 내용]\n아래는 사용자가 첨부한 파일이다.\n${attachedFileContext}`;
+                if (attachedFileContext) ownerInput += `\n\n[My Computer - 문서 및 로컬 파일 컨텍스트]\n${attachedFileContext}`;
                 if (urlContext) ownerInput += `\n\n[Web Fetcher - 외부 링크 내용]\n아래는 사용자가 공유한 외부 링크의 내용이다. 코드가 포함된 경우 변형 없이 원본을 참조하라.\n${urlContext}`;
                 if (stockContext) ownerInput += stockContext;
-                if (intention.wantsFileEdit && attachedLocalPaths.length > 0) ownerInput += `\n\n[My Computer - 수정 모드]\n첨부 파일을 수정한 결과만 태그 안에 전체 출력하라. 새 파일을 만들지 마라.`;
+                
+                // 파일 저장 의도가 감지되면 강력하게 지시
+                if (intention.wantsFileOutput) {
+                    ownerInput += `\n\n[My Computer - 포맷 출력 강제 모드]\n사용자가 결과물을 특정 파일 형태로 출력하거나 저장하길 원합니다. 서론이나 부연 설명 없이, 파일에 저장될 결과물 본문만 코드 블록에 정확히 담아 출력하십시오.`;
+                } else if (intention.wantsFileEdit && attachedLocalPaths.length > 0) {
+                    ownerInput += `\n\n[My Computer - 수정 모드]\n첨부 파일을 수정한 결과만 태그 안에 전체 출력하라. 새 파일을 만들지 마라.`;
+                }
             } else {
                 ownerInput = `[최근 피드백을 반영해 수정하세요]:\n${latestFeedback}`;
             }
@@ -838,9 +956,16 @@ AI 모델의 고질적인 문제인 '과거 데이터(작년 주가 등)를 현�
             else latestCode = ownerRaw.trim();
             
             await ownerChannel.send(`**(Owner 시도 ${attempt}/${MAX_RETRIES})**`);
-            await sendSplitMessage(ownerChannel, `\`\`\`\n${latestCode}\n\`\`\``);
+            
+            await sendSmartMessage(ownerChannel, latestCode, 'owner_code', true);
 
             if (signal.aborted) { isUserStopped = true; break; }
+
+            if (latestCode.includes("전체 코드 파악 완료")) {
+                await ownerChannel.send('✅ **[시스템 바이패스 발동]** 전체 코드 파악 피드백을 확인했습니다. 불필요한 리뷰어 평가를 생략하고 즉시 대기 모드로 전환합니다.');
+                isApproved = true;
+                break; 
+            }
 
             await reviewerChannel.sendTyping();
             const reviewerRaw = await callLLM(config.reviewer.model, config.reviewer.key, modePrompts.REVIEWER, `[Owner 제출물]:\n<CODE>\n${latestCode}\n</CODE>`);
@@ -868,7 +993,7 @@ AI 모델의 고질적인 문제인 '과거 데이터(작년 주가 등)를 현�
         }
 
         let arbiterInputContext = `[요청]: ${content}\n[최종 결과물]:\n${latestCode}\n`;
-        const shouldRunMoA = isApproved && moaState[channelId];
+        const shouldRunMoA = isApproved && moaState[channelId] && !latestCode.includes("전체 코드 파악 완료"); 
 
         if (shouldRunMoA && config.moa && config.moa.length > 0) {
             await arbiterChannel.send(`🧠 **[MoA 가동 중]** 외부 모델에 집단지성 검증을 요청합니다...`);
@@ -879,31 +1004,45 @@ AI 모델의 고질적인 문제인 '과거 데이터(작년 주가 등)를 현�
             if(moaResults.length > 1) arbiterInputContext += `\n[MoA 2 의견]:\n${moaResults[1]}`;
         }
 
-        await arbiterChannel.sendTyping();
-        const arbiterFinal = await callLLM(config.arbiter.model, config.arbiter.key, arbiterPrompt, arbiterInputContext);
-        
-        await arbiterChannel.send('👑 **(Arbiter 최종 판정)**:');
-        await sendSplitMessage(arbiterChannel, arbiterFinal);
+        let arbiterFinal: string | undefined;
 
-        if (intention.wantsFileEdit && attachedLocalPaths.length > 0) {
-            await ownerChannel.send(`📨 **(Owner → My Computer)** 원본 파일을 수정된 내용으로 덮어씁니다...`);
-            try {
-                const editFilename = path.basename(attachedLocalPaths[0]);
-                await sendFileToDiscord(ownerChannel, latestCode, editFilename);
-            } catch (err: any) {
-                await ownerChannel.send(`❌ 파일 전송 실패: ${err.message}`);
-            }
-        } else if (intention.wantsFileOutput) {
-            await ownerChannel.send(`📨 **(Owner → My Computer)** 결과물을 파일로 생성하여 저장합니다...`);
-            try {
-                const { filename, content: fileContent } = extractFileFromOutput(latestCode, arbiterFinal, content);
-                const finalFilename = intention.suggestedFilename ?? filename;
+        if (!latestCode.includes("전체 코드 파악 완료")) {
+            await arbiterChannel.sendTyping();
+            arbiterFinal = await callLLM(config.arbiter.model, config.arbiter.key, arbiterPrompt, arbiterInputContext);
+            
+            await arbiterChannel.send('👑 **(Arbiter 최종 판정)**:');
+            await sendSmartMessage(arbiterChannel, arbiterFinal, 'arbiter_final', false);
+        }
+
+        // ✅ 파일 수정 / 강제 변환 포맷 저장 프로세스
+        if (intention.wantsFileOutput || (intention.wantsFileEdit && attachedLocalPaths.length > 0)) {
+            const targetCode = latestCode.includes("전체 코드 파악 완료") ? latestCode : (arbiterFinal ? arbiterFinal : latestCode);
+            const { filename, content: fileContent } = extractFileFromOutput(latestCode, targetCode, content, intention.forcedExtension);
+            
+            let finalFilename = intention.suggestedFilename ?? filename;
+            
+            // 명시적 로컬 경로 저장이 감지된 경우
+            if (intention.savePath) {
+                try {
+                    await ownerChannel.send(`📨 **(Owner → My Computer)** 지정된 로컬 경로(\`${intention.savePath}\`)로 파일 직접 저장을 시도합니다...`);
+                    await fsp.mkdir(intention.savePath, { recursive: true });
+                    const fullPath = path.join(intention.savePath, finalFilename);
+                    await fsp.writeFile(fullPath, fileContent, 'utf-8');
+                    await ownerChannel.send(`✅ **[My Computer]** 사용자 지정 디렉토리에 파일이 성공적으로 생성되었습니다: \`${fullPath}\``);
+                    
+                    // 디스코드에 동시 백업
+                    await sendFileToDiscord(ownerChannel, fileContent, finalFilename);
+                } catch (err: any) {
+                    await ownerChannel.send(`❌ 로컬 파일 직접 저장 실패: ${err.message}\n(디스코드 파일 전송으로 대체합니다.)`);
+                    await sendFileToDiscord(ownerChannel, fileContent, finalFilename);
+                }
+            } else {
+                // 특정 경로 없이 단순히 저장해달라고 한 경우
+                await ownerChannel.send(`📨 **(Owner → My Computer)** 결과물을 사용자 지정 포맷 파일로 렌더링하여 전송합니다...`);
                 await sendFileToDiscord(ownerChannel, fileContent, finalFilename);
-            } catch (err: any) {
-                await ownerChannel.send(`❌ 파일 전송 실패: ${err.message}`);
             }
         } else {
-            await ownerChannel.send(`📨 **(Owner → 사용자 전달)** 최종 산출물은 아래와 같습니다.`);
+            await ownerChannel.send(`📨 **(Owner → 사용자 전달)** 최종 산출물 처리가 완료되었습니다.`);
         }
 
     } catch (error) {
