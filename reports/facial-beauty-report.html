@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>안면 미학 리포트 · Subject 01</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Sans+KR:wght@300;400;500&family=Noto+Serif+KR:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #fbfbf9;
+      --paper: #ffffff;
+      --ink: #141414;
+      --muted: #6f6c67;
+      --soft: #8d8982;
+      --line: #e4e1db;
+      --line-strong: #cfcbc3;
+      --wash: #f6f5f1;
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Noto Sans KR", sans-serif;
+      font-weight: 300;
+      letter-spacing: -0.01em;
+      line-height: 1.65;
+    }
+
+    body { padding: 48px 24px 80px; }
+
+    .sheet {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 56px 56px 48px;
+      box-shadow: 0 24px 80px rgba(20, 20, 20, 0.04);
+    }
+
+    .kicker {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-family: "Cormorant Garamond", serif;
+      font-size: 13px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--soft);
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      font-family: "Noto Serif KR", serif;
+      font-weight: 400;
+      font-size: 42px;
+      letter-spacing: -0.04em;
+      line-height: 1.2;
+      margin: 28px 0 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      max-width: 640px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 36px 0 40px;
+    }
+
+    .meta-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: var(--wash);
+    }
+
+    .meta-item span {
+      display: block;
+      font-family: "Cormorant Garamond", serif;
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--soft);
+      margin-bottom: 6px;
+    }
+
+    .meta-item strong {
+      font-weight: 400;
+      font-size: 13.5px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 0.92fr 1.08fr;
+      gap: 28px;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+    }
+
+    .portrait {
+      padding: 22px 22px 18px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .portrait-frame {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fff;
+      aspect-ratio: 3 / 4;
+    }
+
+    .portrait-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 12%;
+      display: block;
+      filter: grayscale(1) contrast(1.05);
+    }
+
+    .portrait-frame svg.overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .portrait figcaption {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--soft);
+      font-family: "Cormorant Garamond", serif;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .scoreboard { padding: 28px 30px 26px; }
+
+    .score-label {
+      font-family: "Cormorant Garamond", serif;
+      letter-spacing: 0.26em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--soft);
+    }
+
+    .score-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 10px 0 8px;
+    }
+
+    .score-number {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 84px;
+      line-height: 0.85;
+      font-weight: 400;
+      letter-spacing: -0.04em;
+    }
+
+    .score-number small {
+      font-size: 28px;
+      color: var(--soft);
+      margin-left: 4px;
+    }
+
+    .verdict {
+      font-family: "Noto Serif KR", serif;
+      font-size: 18px;
+      font-weight: 400;
+      letter-spacing: -0.03em;
+      line-height: 1.45;
+      max-width: 18em;
+    }
+
+    .hairline {
+      height: 1px;
+      background: var(--line);
+      margin: 22px 0;
+    }
+
+    .note {
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    .note strong { color: var(--ink); font-weight: 500; }
+
+    .bars { display: grid; gap: 12px; margin-top: 22px; }
+
+    .bar-row { display: grid; grid-template-columns: 92px 1fr 36px; gap: 10px; align-items: center; }
+
+    .bar-row span { font-size: 12px; color: var(--muted); }
+
+    .bar-row b { font-size: 12px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+
+    .track {
+      height: 2px;
+      background: var(--line);
+      position: relative;
+    }
+
+    .track i {
+      position: absolute;
+      left: 0;
+      top: -2px;
+      height: 6px;
+      background: var(--ink);
+      border-radius: 99px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin: 42px 0 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-title h2 {
+      font-family: "Noto Serif KR", serif;
+      font-size: 22px;
+      font-weight: 400;
+      letter-spacing: -0.03em;
+    }
+
+    .section-title em {
+      font-family: "Cormorant Garamond", serif;
+      font-style: italic;
+      color: var(--soft);
+      font-size: 14px;
+    }
+
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-8 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+    .metric {
+      padding: 18px 18px 16px;
+      min-height: 128px;
+    }
+
+    .metric .en {
+      font-family: "Cormorant Garamond", serif;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--soft);
+    }
+
+    .metric h3 {
+      font-size: 14px;
+      font-weight: 500;
+      margin: 6px 0 10px;
+    }
+
+    .metric .n {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 32px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .metric p { font-size: 12.5px; color: var(--muted); }
+
+    .ratio-card { padding: 22px 24px; }
+
+    .ratio-card h3 {
+      font-size: 15px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .ratio-card p { font-size: 13.5px; color: var(--muted); }
+
+    .thirds {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin: 16px 0 4px;
+    }
+
+    .third {
+      display: grid;
+      grid-template-columns: 88px 1fr 48px;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .third .box {
+      height: 28px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: linear-gradient(#141414, #141414) no-repeat left center;
+      background-size: var(--w) 100%;
+    }
+
+    ul.clean {
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    ul.clean li {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    ul.clean li b {
+      display: block;
+      color: var(--ink);
+      font-weight: 500;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .reco { padding: 20px 22px; }
+
+    .reco .en {
+      font-family: "Cormorant Garamond", serif;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--soft);
+    }
+
+    .reco h3 {
+      font-family: "Noto Serif KR", serif;
+      font-size: 18px;
+      font-weight: 400;
+      margin: 6px 0 12px;
+    }
+
+    .reco ol {
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13.5px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      font-size: 11.5px;
+      color: var(--soft);
+    }
+
+    .radar-wrap {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 8px 8px 4px;
+    }
+
+    @media (max-width: 920px) {
+      body { padding: 16px; }
+      .sheet { padding: 28px 20px; border-radius: 18px; }
+      h1 { font-size: 30px; }
+      .hero, .meta, .grid-3, .grid-2, .grid-8, .radar-wrap {
+        grid-template-columns: 1fr;
+      }
+      .score-number { font-size: 72px; }
+    }
+
+    @media print {
+      body { background: #fff; padding: 0; }
+      .sheet { box-shadow: none; border: none; padding: 0; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <article class="sheet">
+    <div class="kicker">
+      <span>Aesthetic Dossier</span>
+      <span>No. 01 — Frontal Study</span>
+    </div>
+
+    <h1>안면 미학 리포트</h1>
+    <p class="subtitle">정면 단일 프레임 기준의 형태·비율 분석. 점수는 과장하지 않으며, 동아시아 남성 클린/소프트 미학을 기준으로 읽는다. 의학적 진단이 아니다.</p>
+
+    <div class="meta">
+      <div class="meta-item"><span>Subject</span><strong>남성 · 청년층</strong></div>
+      <div class="meta-item"><span>Capture</span><strong>정면 ID 앵글</strong></div>
+      <div class="meta-item"><span>Date</span><strong>2026.08.20</strong></div>
+      <div class="meta-item"><span>Mode</span><strong>비수술 · 그루밍</strong></div>
+    </div>
+
+    <section class="hero">
+      <figure class="card portrait">
+        <div class="portrait-frame">
+          <img src="assets/face-contour.png" alt="얼굴 윤곽 라인 드로잉" />
+          <svg class="overlay" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <line x1="150" y1="42" x2="150" y2="352" stroke="#141414" stroke-opacity="0.18" stroke-width="0.6" />
+            <line x1="78" y1="118" x2="222" y2="118" stroke="#141414" stroke-opacity="0.16" stroke-width="0.5" />
+            <line x1="86" y1="188" x2="214" y2="188" stroke="#141414" stroke-opacity="0.16" stroke-width="0.5" />
+            <line x1="96" y1="258" x2="204" y2="258" stroke="#141414" stroke-opacity="0.16" stroke-width="0.5" />
+            <circle cx="150" cy="200" r="92" fill="none" stroke="#141414" stroke-opacity="0.08" stroke-width="0.6" />
+          </svg>
+        </div>
+        <figcaption>
+          <span>Contour Map</span>
+          <span>Midline · Vertical Thirds</span>
+        </figcaption>
+      </figure>
+
+      <div class="card scoreboard">
+        <div class="score-label">Composite Attractiveness</div>
+        <div class="score-row">
+          <div class="score-number">7.8<small>/10</small></div>
+          <p class="verdict">상위권이지만 모델급은 아니다. 대칭과 피부가 점수를 끌어올리고, 연성 골격이 상한을 제한한다.</p>
+        </div>
+        <div class="hairline"></div>
+        <p class="note"><strong>판정.</strong> 좌우 균형과 피부 질감은 분명히 강점이다. 그러나 광대·하관의 각이 약하고 중안부가 길어 얼굴이 둥글고 어려 보인다. “잘생긴 연성 미남”이지, 샤프한 골상미는 아니다.</p>
+        <div class="bars">
+          <div class="bar-row"><span>대칭</span><div class="track"><i style="width:87%"></i></div><b>8.7</b></div>
+          <div class="bar-row"><span>피부</span><div class="track"><i style="width:88%"></i></div><b>8.8</b></div>
+          <div class="bar-row"><span>눈</span><div class="track"><i style="width:82%"></i></div><b>8.2</b></div>
+          <div class="bar-row"><span>코</span><div class="track"><i style="width:76%"></i></div><b>7.6</b></div>
+          <div class="bar-row"><span>비율</span><div class="track"><i style="width:73%"></i></div><b>7.3</b></div>
+          <div class="bar-row"><span>골격</span><div class="track"><i style="width:70%"></i></div><b>7.0</b></div>
+          <div class="bar-row"><span>하관</span><div class="track"><i style="width:68%"></i></div><b>6.8</b></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-title">
+      <h2>세부 점수</h2>
+      <em>Weighted 10-point scale</em>
+    </div>
+    <div class="grid-8">
+      <article class="card metric"><div class="en">Symmetry</div><h3>좌우 대칭</h3><div class="n">8.7</div><p>눈·귀·구각의 수평 정렬이 높다. 정면 기준 가장 안정적인 축.</p></article>
+      <article class="card metric"><div class="en">Skin</div><h3>피부 질감</h3><div class="n">8.8</div><p>톤이 고르고 병변이 거의 없다. 전체 점수에서 가장 확실한 자산.</p></article>
+      <article class="card metric"><div class="en">Eyes</div><h3>눈 형태</h3><div class="n">8.2</div><p>큰 아몬드형. 단안검 또는 속쌍꺼풀 추정. 간격은 비근 너비와 대체로 맞는다.</p></article>
+      <article class="card metric"><div class="en">Brows</div><h3>눈썹</h3><div class="n">8.1</div><p>진하고 직선에 가깝다. 인상을 온화하게 만들며, 꼬리는 살짝 처진다.</p></article>
+      <article class="card metric"><div class="en">Nose</div><h3>코 윤곽</h3><div class="n">7.6</div><p>비근 높이는 중간. 비첨이 둥글어 선명도가 한 단계 떨어진다.</p></article>
+      <article class="card metric"><div class="en">Mouth</div><h3>입술 비</h3><div class="n">7.5</div><p>상:하 ≈ 1:1.5. 구각이 중립~미세 상승. 볼륨은 평균 상회.</p></article>
+      <article class="card metric"><div class="en">Bone</div><h3>골격</h3><div class="n">7.0</div><p>광대 돌출이 약하고 연부조직이 두껍다. 유년형 구조.</p></article>
+      <article class="card metric"><div class="en">Jaw</div><h3>턱선</h3><div class="n">6.8</div><p>가장 약한 축. 각진 하관이 아니라 곡선 하관. 짧은 하안부와 결합.</p></article>
+    </div>
+
+    <div class="section-title">
+      <h2>비율과 구조</h2>
+      <em>Morphometrics</em>
+    </div>
+    <div class="grid-2">
+      <article class="card ratio-card">
+        <h3>수직 삼등분</h3>
+        <p>이상치는 상·중·하 1:1:1. 실제는 중안부가 가장 길고, 하안부가 짧다. 앞머리가 상안부를 가려 중안부 우위가 더 강조된다.</p>
+        <div class="thirds">
+          <div class="third"><span>상안부</span><div class="box" style="--w:86%"></div><span>≈ 0.92</span></div>
+          <div class="third"><span>중안부</span><div class="box" style="--w:100%"></div><span>≈ 1.08</span></div>
+          <div class="third"><span>하안부</span><div class="box" style="--w:78%"></div><span>≈ 0.86</span></div>
+        </div>
+        <p style="margin-top:12px">짧은 하안부는 어려 보이게 하지만, 동시에 얼굴 길이를 압축해 둥근 인상을 만든다.</p>
+      </article>
+      <article class="card ratio-card">
+        <div class="radar-wrap">
+          <svg viewBox="0 0 220 220" width="240" height="240" aria-hidden="true">
+            <g fill="none" stroke="#e4e1db" stroke-width="1">
+              <polygon points="110,22 186,66 186,154 110,198 34,154 34,66" />
+              <polygon points="110,44 167,80 167,140 110,176 53,140 53,80" />
+              <polygon points="110,66 148,94 148,126 110,154 72,126 72,94" />
+              <line x1="110" y1="22" x2="110" y2="198" />
+              <line x1="34" y1="66" x2="186" y2="154" />
+              <line x1="186" y1="66" x2="34" y2="154" />
+            </g>
+            <polygon points="110,38 174,78 168,142 110,168 52,140 48,86" fill="rgba(20,20,20,0.08)" stroke="#141414" stroke-width="1.2" />
+            <text x="110" y="14" text-anchor="middle" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Symmetry</text>
+            <text x="196" y="66" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Skin</text>
+            <text x="196" y="160" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Eyes</text>
+            <text x="110" y="214" text-anchor="middle" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Jaw</text>
+            <text x="8" y="160" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Bone</text>
+            <text x="16" y="66" font-size="9" fill="#8d8982" font-family="Cormorant Garamond">Ratio</text>
+          </svg>
+          <div>
+            <h3>가중 산출</h3>
+            <p>대칭 20% · 피부 15% · 수직비율 15% · 골격 15% · 눈 12% · 하관 10% · 코 8% · 헤어 5%.</p>
+            <p style="margin-top:10px">합성 7.8. 피부·대칭이 없다면 7.1 근처로 떨어진다. 반대로 하관을 7.5 이상으로 끌어올리면 전체는 8.1–8.3 구간이다.</p>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="grid-3" style="margin-top:16px">
+      <article class="card ratio-card">
+        <h3>얼굴형</h3>
+        <p>타원~약한 둥근형. 하악각이 부드럽고 턱끝은 원형. 광대가 약해 중안부가 평평하게 읽힌다. 세로 길이보다 가로 볼륨이 먼저 보인다.</p>
+      </article>
+      <article class="card ratio-card">
+        <h3>눈·코 관계</h3>
+        <p>내안각 간격은 대략 한 눈 너비. 비근이 높지 않아 눈이 더 커 보인다. 이는 이점으로 남기되, 콧대를 과도하게 세우면 인상이 경직된다.</p>
+      </article>
+      <article class="card ratio-card">
+        <h3>피부와 조명</h3>
+        <p>정면 균일광에서 홍반·색소·여드름이 거의 없다. 유분 과다 광택도 약하다. 현재 피부 점수는 그루밍이 아니라 기반 품질에 가깝다.</p>
+      </article>
+    </div>
+
+    <div class="section-title">
+      <h2>강점 / 개선점</h2>
+      <em>Unflattering, specific</em>
+    </div>
+    <div class="grid-2">
+      <ul class="clean">
+        <li><b>01 대칭</b>정면 기준 수평축이 안정적이다. 매력 판단에서 가장 값비싼 요소를 이미 갖고 있다.</li>
+        <li><b>02 피부</b>클리어한 톤이 연성 골격을 고급스럽게 만든다. 피부만 무너져도 점수는 즉시 하락한다.</li>
+        <li><b>03 눈</b>크기와 간격이 좋다. 단안검이어도 처진 눈은 아니다. 시선이 또렷하다.</li>
+        <li><b>04 정돈감</b>헤어·칼라·표정 모두 절제되어 있다. 과한 장식 없이 완성도가 나온다.</li>
+      </ul>
+      <ul class="clean">
+        <li><b>01 하관 선명도</b>턱선이 곡선이다. 남성 골격미의 핵심이 비어 있어 전체 상한이 막힌다.</li>
+        <li><b>02 중안부 길이</b>눈썹–비첨이 길어 얼굴이 조금 늘어져 보인다. 실제 나이보다 중안이 성숙해 읽힌다.</li>
+        <li><b>03 광대</b>측광대가 약하다. 정면에서 입체감이 부족하고, 볼이 평평하다.</li>
+        <li><b>04 코끝</b>비첨이 둥글다. 전체 이미지가 부드러워지는 대신 이목구비의 칼이 없다.</li>
+      </ul>
+    </div>
+
+    <div class="section-title">
+      <h2>실행 권고</h2>
+      <em>Grooming first. Surgery not indicated.</em>
+    </div>
+    <div class="grid-3">
+      <article class="card reco">
+        <div class="en">01 Hair</div>
+        <h3>헤어</h3>
+        <ol>
+          <li>옆·뒷머리 볼륨을 줄이는 테이퍼. 턱선이 보이게.</li>
+          <li>앞머리 무게를 1cm 정도 올려 상안부 노출.</li>
+          <li>가르마는 유지하되 더 또렷하게. 둥근 실루엣을 깨는 수직선이 필요.</li>
+          <li>과도한 리프 볼륨은 얼굴을 더 짧게 만든다. 높이 &gt; 옆 부피.</li>
+        </ol>
+      </article>
+      <article class="card reco">
+        <div class="en">02 Face</div>
+        <h3>눈썹 · 피부 · 하관</h3>
+        <ol>
+          <li>직선 눈썹 유지. 꼬리만 1–2mm 정리해 처짐을 줄일 것.</li>
+          <li>피부는 유지가 목표. SPF, 보습, 과도한 각질 제거 금지.</li>
+          <li>사진이라면 광대 위·하악각에만 아주 옅은 쉐딩. 볼 전체는 금지.</li>
+          <li>하관이 약하면 짧은 수염보다 깨끗한 면도가 낫다. 지금은 면도가 맞다.</li>
+        </ol>
+      </article>
+      <article class="card reco">
+        <div class="en">03 Style</div>
+        <h3>스타일 · 자세</h3>
+        <ol>
+          <li>네이비/블랙 칼라 셔츠는 유효. 대비가 피부를 살린다.</li>
+          <li>라운드넥보다 셔츠, 블레이저, 직선 숄더.</li>
+          <li>카메라 아래 15° 앵글은 피할 것. 하관이 더 묻힌다.</li>
+          <li>체지방이 있다면 소폭 감량이 하관에 가장 싸다. 운동으로 목·승모 라인을 세울 것.</li>
+        </ol>
+      </article>
+    </div>
+
+    <div class="section-title">
+      <h2>한 줄 전략</h2>
+      <em>Do this, not that</em>
+    </div>
+    <div class="card ratio-card">
+      <p>얼굴을 더 “예쁘게” 만들 필요는 없다. 이미 연성 미학의 강점이 있다. 점수를 올리는 유일한 경로는 <strong>하관을 보이게 하고, 중안부를 짧게 읽히게 하는 것</strong>이다. 옆머리 축소, 상안부 노출, 구조적인 옷, 정면·수평 촬영. 코·눈 시술은 현재 프레임에서 이득 대비 리스크가 크다.</p>
+    </div>
+
+    <footer class="footer">
+      <div>본 문서는 정면 사진 1장의 시각 분석이다. 3D 계측, 교합, 측면 프로필은 포함하지 않는다. 수치는 추정이며 의료 권고가 아니다.</div>
+      <div>ATELIER REPORT · KR · 2026</div>
+    </footer>
+  </article>
+</body>
+</html>
