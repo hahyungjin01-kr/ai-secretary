@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>안면 심미 분석 보고서 — Facial Aesthetics Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Noto+Sans+KR:wght@100..900&family=Noto+Serif+KR:wght@300;400;500;600&family=JetBrains+Mono:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0a0a0a;
+    --ink-70:#3d3d3d;
+    --ink-50:#6b6b6b;
+    --ink-30:#9c9c9c;
+    --ink-15:#c9c9c9;
+    --line:#e4e4e4;
+    --line-soft:#efefef;
+    --paper:#ffffff;
+    --paper-2:#fafafa;
+    --serif:"Cormorant Garamond","Noto Serif KR",serif;
+    --kserif:"Noto Serif KR","Cormorant Garamond",serif;
+    --sans:"Noto Sans KR","Helvetica Neue",Arial,sans-serif;
+    --mono:"JetBrains Mono","SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  body{
+    margin:0;
+    background:#f2f2f0;
+    color:var(--ink);
+    font-family:var(--sans);
+    font-weight:300;
+    font-size:14px;
+    line-height:1.85;
+    letter-spacing:-0.005em;
+  }
+
+  .sheet{
+    max-width:940px;
+    margin:0 auto;
+    background:var(--paper);
+    padding:88px 76px 72px;
+  }
+
+  /* ── typography primitives ─────────────────────────── */
+  .kicker{
+    font-family:var(--mono);
+    font-size:9.5px;
+    font-weight:300;
+    letter-spacing:.26em;
+    text-transform:uppercase;
+    color:var(--ink-30);
+  }
+  .label{
+    font-family:var(--mono);
+    font-size:9px;
+    font-weight:300;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    color:var(--ink-30);
+  }
+  .num{font-family:var(--mono);font-weight:300;font-variant-numeric:tabular-nums;}
+  .hair{border:0;border-top:1px solid var(--line);margin:0;}
+  .hair-dark{border:0;border-top:1px solid var(--ink);margin:0;}
+
+  /* ── masthead ──────────────────────────────────────── */
+  .masthead{padding-bottom:34px;border-bottom:1px solid var(--ink);}
+  .masthead .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:52px;}
+  .wordmark{font-family:var(--mono);font-size:10px;letter-spacing:.34em;text-transform:uppercase;color:var(--ink);}
+  h1{
+    font-family:var(--kserif);
+    font-weight:400;
+    font-size:44px;
+    line-height:1.22;
+    letter-spacing:-0.02em;
+    margin:0 0 14px;
+  }
+  .subtitle{
+    font-family:var(--serif);
+    font-size:17px;
+    font-weight:300;
+    font-style:italic;
+    letter-spacing:.03em;
+    color:var(--ink-50);
+    margin:0 0 44px;
+  }
+  .meta{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:14px;
+    overflow:hidden;
+  }
+  .meta > div{background:var(--paper);padding:16px 18px;}
+  .meta dt{margin:0 0 6px;}
+  .meta dd{margin:0;font-size:13px;line-height:1.5;font-weight:400;}
+
+  /* ── section chrome ────────────────────────────────── */
+  section{padding:60px 0 0;}
+  .sec-head{display:flex;align-items:baseline;gap:18px;margin-bottom:8px;}
+  .sec-no{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--ink-30);padding-top:6px;}
+  h2{
+    font-family:var(--kserif);
+    font-weight:500;
+    font-size:23px;
+    letter-spacing:-0.01em;
+    margin:0;
+  }
+  h2 em{
+    font-family:var(--serif);
+    font-style:italic;
+    font-weight:300;
+    font-size:15px;
+    color:var(--ink-30);
+    letter-spacing:.04em;
+    margin-left:10px;
+  }
+  .sec-note{color:var(--ink-50);font-size:13px;margin:14px 0 26px;max-width:66ch;}
+
+  h3{
+    font-family:var(--kserif);
+    font-weight:500;
+    font-size:15px;
+    margin:0 0 12px;
+    letter-spacing:-0.01em;
+  }
+
+  /* ── cards ─────────────────────────────────────────── */
+  .card{
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:30px 32px;
+    background:var(--paper);
+  }
+  .card.tint{background:var(--paper-2);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+
+  /* ── verdict panel ─────────────────────────────────── */
+  .verdict{
+    border:1px solid var(--ink);
+    border-radius:24px;
+    padding:0;
+    overflow:hidden;
+    margin-top:56px;
+  }
+  .verdict-top{display:grid;grid-template-columns:250px 1fr;}
+  .verdict-score{
+    padding:38px 34px 30px;
+    border-right:1px solid var(--line);
+    text-align:center;
+  }
+  .score-big{
+    font-family:var(--serif);
+    font-weight:300;
+    font-size:104px;
+    line-height:.9;
+    letter-spacing:-0.04em;
+    font-variant-numeric:tabular-nums;
+  }
+  .score-den{font-family:var(--mono);font-size:12px;color:var(--ink-30);letter-spacing:.14em;margin-top:14px;}
+  .verdict-body{padding:34px 34px 30px;}
+  .band{
+    font-family:var(--kserif);
+    font-size:19px;
+    font-weight:500;
+    margin:0 0 10px;
+  }
+  .verdict-body p{margin:0;color:var(--ink-70);font-size:13.5px;}
+
+  /* ── gauge ─────────────────────────────────────────── */
+  .gauge{border-top:1px solid var(--line);padding:26px 34px 30px;}
+  .gauge-track{position:relative;height:1px;background:var(--ink-15);margin:28px 0 0;}
+  .gauge-track .tick{position:absolute;top:-4px;width:1px;height:9px;background:var(--ink-15);}
+  .gauge-track .mark{
+    position:absolute;top:-9px;width:1px;height:19px;background:var(--ink);
+  }
+  .gauge-track .mark::after{
+    content:"";position:absolute;left:-4.5px;top:-4.5px;
+    width:9px;height:9px;border-radius:50%;background:var(--ink);
+  }
+  .gauge-scale{display:flex;justify-content:space-between;margin-top:12px;}
+  .gauge-bands{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;margin-top:22px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .gauge-bands div{background:var(--paper);padding:11px 12px;text-align:center;}
+  .gauge-bands div.on{background:var(--ink);}
+  .gauge-bands div.on .label,.gauge-bands div.on .bd{color:#fff;}
+  .bd{display:block;font-size:12px;margin-top:4px;color:var(--ink-70);}
+
+  /* ── contour figure ───────────────────────────────── */
+  .figure-wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:26px;align-items:start;}
+  .figure{
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:22px;
+    background:var(--paper);
+  }
+  .figure svg{display:block;width:100%;height:auto;}
+  .figcap{
+    font-family:var(--mono);
+    font-size:8.5px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--ink-30);
+    text-align:center;
+    margin-top:12px;
+  }
+  .legend{list-style:none;margin:0;padding:0;}
+  .legend li{
+    display:grid;
+    grid-template-columns:26px 1fr;
+    gap:12px;
+    padding:11px 0;
+    border-top:1px solid var(--line-soft);
+    font-size:12.5px;
+    color:var(--ink-70);
+    line-height:1.65;
+  }
+  .legend li:first-child{border-top:0;}
+  .legend .k{font-family:var(--mono);font-size:10px;color:var(--ink-30);padding-top:2px;letter-spacing:.06em;}
+  .legend b{font-weight:500;color:var(--ink);}
+
+  /* ── score table ──────────────────────────────────── */
+  .scores{margin-top:8px;}
+  .score-row{
+    display:grid;
+    grid-template-columns:130px 34px 1fr 44px;
+    gap:16px;
+    align-items:center;
+    padding:13px 0;
+    border-top:1px solid var(--line-soft);
+  }
+  .score-row:first-child{border-top:1px solid var(--ink);}
+  .score-row .nm{font-size:13px;font-weight:400;}
+  .score-row .wt{font-family:var(--mono);font-size:9.5px;color:var(--ink-30);text-align:right;}
+  .score-row .vl{font-family:var(--mono);font-size:13px;text-align:right;font-variant-numeric:tabular-nums;}
+  .bar{position:relative;height:1px;background:var(--line);}
+  .bar i{position:absolute;left:0;top:-2px;height:5px;background:var(--ink);display:block;}
+  .bar u{position:absolute;top:-4px;width:1px;height:9px;background:var(--ink-15);text-decoration:none;}
+  .scores-foot{
+    display:grid;grid-template-columns:130px 34px 1fr 44px;gap:16px;align-items:center;
+    padding:15px 0 0;border-top:1px solid var(--ink);margin-top:2px;
+  }
+  .scores-foot .nm{font-family:var(--kserif);font-size:14px;font-weight:600;}
+  .scores-foot .vl{font-family:var(--mono);font-size:15px;text-align:right;}
+
+  .radar-box{border:1px solid var(--line);border-radius:20px;padding:16px 10px 8px;}
+  .radar-box svg{display:block;width:100%;height:auto;}
+
+  /* ── data table ───────────────────────────────────── */
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  thead th{
+    font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-30);font-weight:300;text-align:left;
+    padding:0 12px 11px 0;border-bottom:1px solid var(--ink);
+  }
+  tbody td{padding:12px 12px 12px 0;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.6;color:var(--ink-70);}
+  tbody td:first-child{color:var(--ink);font-weight:400;}
+  td .en{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;color:var(--ink-30);margin-top:2px;}
+  td.v{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap;}
+  .conf{
+    font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+    border:1px solid var(--line);border-radius:20px;padding:2px 9px;white-space:nowrap;color:var(--ink-50);
+  }
+  .conf.hi{border-color:var(--ink);color:var(--ink);}
+  .conf.lo{border-style:dashed;color:var(--ink-30);}
+
+  /* ── findings lists ───────────────────────────────── */
+  .findings{list-style:none;margin:0;padding:0;}
+  .findings > li{
+    display:grid;grid-template-columns:30px 1fr;gap:16px;
+    padding:18px 0;border-top:1px solid var(--line-soft);
+  }
+  .findings > li:first-child{border-top:0;padding-top:4px;}
+  .findings .idx{font-family:var(--mono);font-size:10px;color:var(--ink-30);padding-top:4px;}
+  .findings .t{display:block;font-weight:500;font-size:13.5px;margin-bottom:5px;}
+  .findings p b{font-weight:500;color:var(--ink-70);}
+  .findings p{margin:0;font-size:12.5px;color:var(--ink-50);line-height:1.75;}
+  .tagrow{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;}
+  .tag{
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:20px;padding:3px 10px;color:var(--ink-50);
+  }
+  .tag.solid{background:var(--ink);border-color:var(--ink);color:#fff;}
+
+  /* ── action cards ─────────────────────────────────── */
+  .action{
+    border:1px solid var(--line);border-radius:20px;padding:26px 28px;
+  }
+  .action .label{display:block;margin-bottom:10px;}
+  .action ul{margin:14px 0 0;padding:0;list-style:none;}
+  .action li{
+    position:relative;padding:0 0 0 16px;margin-bottom:11px;
+    font-size:12.5px;color:var(--ink-70);line-height:1.7;
+  }
+  .action li::before{
+    content:"";position:absolute;left:0;top:11px;width:7px;height:1px;background:var(--ink-15);
+  }
+  .action li b{font-weight:500;color:var(--ink);}
+  .caveat{
+    margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft);
+    font-size:11.5px;color:var(--ink-30);line-height:1.7;
+  }
+
+  /* ── roadmap ──────────────────────────────────────── */
+  .phase{
+    display:grid;grid-template-columns:86px 1fr 96px 96px;gap:18px;
+    padding:20px 0;border-top:1px solid var(--line-soft);align-items:start;
+  }
+  .phase:first-of-type{border-top:1px solid var(--ink);}
+  .phase .ph{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--ink-30);padding-top:3px;}
+  .phase b{display:block;font-weight:500;font-size:13.5px;margin-bottom:4px;}
+  .phase p{margin:0;font-size:12.5px;color:var(--ink-50);}
+  .dots{display:flex;gap:4px;align-items:center;padding-top:4px;}
+  .dots i{width:6px;height:6px;border-radius:50%;border:1px solid var(--ink-15);display:block;}
+  .dots i.f{background:var(--ink);border-color:var(--ink);}
+  .dots span{font-family:var(--mono);font-size:8.5px;color:var(--ink-30);letter-spacing:.1em;margin-left:4px;}
+
+  /* ── footer ───────────────────────────────────────── */
+  footer{margin-top:64px;padding-top:26px;border-top:1px solid var(--ink);}
+  footer .disc{font-size:11.5px;color:var(--ink-50);line-height:1.85;max-width:78ch;}
+  footer .disc li{margin-bottom:7px;}
+  footer ol{padding-left:18px;margin:14px 0 0;}
+  .signoff{
+    display:flex;justify-content:space-between;align-items:baseline;gap:24px;
+    margin-top:34px;padding-top:18px;border-top:1px solid var(--line);
+  }
+  .signoff .kicker{white-space:nowrap;}
+
+  @media (max-width:820px){
+    .sheet{padding:48px 22px;}
+    .meta,.grid2,.grid3,.figure-wrap,.verdict-top{grid-template-columns:1fr;}
+    .verdict-score{border-right:0;border-bottom:1px solid var(--line);}
+    h1{font-size:32px;}
+    .score-row,.scores-foot{grid-template-columns:100px 30px 1fr 40px;gap:10px;}
+    .phase{grid-template-columns:1fr;}
+  }
+
+  @page{size:A4;margin:13mm;}
+  @media print{
+    body{background:#fff;font-size:10.5px;}
+    .sheet{padding:0;max-width:none;}
+    section,.card,.figure,.action,.verdict{break-inside:avoid;page-break-inside:avoid;}
+    h1{font-size:30px;}
+    .score-big{font-size:74px;}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <!-- ═══════════════ MASTHEAD ═══════════════ -->
+  <header class="masthead">
+    <div class="top">
+      <span class="wordmark">Facial Aesthetics Report</span>
+      <span class="kicker">No. FA—2608—01</span>
+    </div>
+    <h1>안면 심미 분석<br>보고서</h1>
+    <p class="subtitle">A structural and quantitative assessment of frontal facial aesthetics</p>
+    <dl class="meta">
+      <div><dt class="label">Subject</dt><dd>동아시아 남성<br>추정 20대 초·중반</dd></div>
+      <div><dt class="label">Source</dt><dd>증명사진 1매<br>정면 0°, 균일 확산광</dd></div>
+      <div><dt class="label">Method</dt><dd>2D 정면 계측 + 정성 관찰<br>가중 9항목 스코어링</dd></div>
+      <div><dt class="label">Confidence</dt><dd>전체 <span class="num">중간</span><br>측면 데이터 없음</dd></div>
+    </dl>
+  </header>
+
+  <!-- ═══════════════ VERDICT ═══════════════ -->
+  <div class="verdict">
+    <div class="verdict-top">
+      <div class="verdict-score">
+        <div class="score-big">7.0</div>
+        <div class="score-den">/ 10.0 &nbsp;·&nbsp; WEIGHTED</div>
+      </div>
+      <div class="verdict-body">
+        <p class="band">조화형 · 평균 이상 / 상위권 진입 직전</p>
+        <p>
+          개별 요소의 결함이 적고 서로 충돌하지 않는 <b>조화형(harmonious)</b> 얼굴입니다.
+          강점은 피부 균일도와 눈매, 눈썹 프레임에 집중되어 있으며, 감점은 거의 전부
+          <b>하안면 정의도와 골격 투사</b> 한 축에서 발생합니다. 즉 "고칠 결함이 많은 얼굴"이 아니라
+          <b>"윤곽 대비가 부족해 인상이 부드럽게 읽히는 얼굴"</b>입니다.
+          결과적으로 조명·각도·체지방률·헤어에 따라 체감 인상의 진폭이 큰 유형이며,
+          시술보다 그루밍·체성분·촬영 조건의 통제에서 얻을 이득이 더 큽니다.
+        </p>
+      </div>
+    </div>
+    <div class="gauge">
+      <span class="label">Distribution position — 동년배 남성 기준 추정</span>
+      <div class="gauge-track">
+        <span class="tick" style="left:0%"></span>
+        <span class="tick" style="left:20%"></span>
+        <span class="tick" style="left:40%"></span>
+        <span class="tick" style="left:60%"></span>
+        <span class="tick" style="left:80%"></span>
+        <span class="tick" style="left:100%"></span>
+        <span class="mark" style="left:70%"></span>
+      </div>
+      <div class="gauge-scale">
+        <span class="num label">0</span><span class="num label">2</span><span class="num label">4</span>
+        <span class="num label">6</span><span class="num label">8</span><span class="num label">10</span>
+      </div>
+      <div class="gauge-bands">
+        <div><span class="label">&lt; 4.5</span><span class="bd">하위</span></div>
+        <div><span class="label">4.5 – 5.5</span><span class="bd">평균 이하</span></div>
+        <div><span class="label">5.5 – 6.5</span><span class="bd">평균권</span></div>
+        <div class="on"><span class="label">6.5 – 7.5</span><span class="bd">평균 이상</span></div>
+        <div><span class="label">7.5 +</span><span class="bd">상위·최상위</span></div>
+      </div>
+      <p class="caveat">
+        위 위치는 검증된 규준 데이터베이스(normative database)에 근거한 백분위가 아니며,
+        정성적 추정치입니다. 대략 <b>상위 25–30%</b> 구간으로 추정하나 이 수치는 검증 불가(Unverified)로 표기합니다.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 01 CONTOUR ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">01</span>
+      <h2>윤곽 도해 <em>Contour Map</em></h2>
+    </div>
+    <p class="sec-note">
+      정면 사진에서 관측된 랜드마크를 단선(single-stroke)으로 재구성한 도해입니다.
+      점선은 계측 기준선(삼등분 · 오등분 · 정중선)이며, 실제 사진의 픽셀 좌표를 1:1로 전사한
+      정밀 오버레이가 아니라 관측 소견을 도식화한 것입니다.
+    </p>
+
+    <div class="figure-wrap">
+      <div class="figure">
+        <svg viewBox="0 0 600 780" role="img" aria-label="정면 얼굴 윤곽 선화 도해">
+          <g fill="none" stroke="#0a0a0a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+
+            <!-- 두개 및 안면 외곽 (좌) -->
+            <path d="M300,100 C245,101 190,132 165,190 C150,228 152,266 160,300
+                     C147,336 144,368 146,392 C149,432 158,462 172,494
+                     C186,524 203,556 226,586 C248,614 272,635 300,642"/>
+            <!-- 두개 및 안면 외곽 (우) -->
+            <path d="M300,100 C355,101 410,132 435,190 C450,228 448,266 440,300
+                     C453,336 456,368 454,392 C451,432 442,462 428,494
+                     C414,524 397,556 374,586 C352,614 328,635 300,642"/>
+
+            <!-- 앞머리 경계 (이마 차폐 라인) -->
+            <path d="M156,288 C180,308 214,320 252,322 C296,324 340,314 372,298
+                     C400,284 424,290 438,304"/>
+            <!-- 헤어 흐름 : 우측 가르마 → 좌측 사선 스윕 -->
+            <path d="M374,176 C322,194 268,230 234,290"/>
+            <path d="M340,160 C288,182 234,224 204,278"/>
+            <path d="M396,198 C368,224 338,256 318,302"/>
+            <path d="M300,146 C258,168 214,206 188,256"/>
+            <path d="M420,216 C429,246 434,274 436,300"/>
+
+            <!-- 귀 -->
+            <path d="M147,350 C129,360 126,412 145,440 C152,450 160,452 164,446"/>
+            <path d="M152,368 C146,384 148,410 158,428"/>
+            <path d="M453,350 C471,360 474,412 455,440 C448,450 440,452 436,446"/>
+            <path d="M448,368 C454,384 452,410 442,428"/>
+
+            <!-- 눈썹 (좌) : 직선형, 짙은 밀도 -->
+            <path d="M274,352 C252,339 216,334 193,344 C215,347 251,353 274,359 Z"/>
+            <!-- 눈썹 (우) -->
+            <path d="M326,352 C348,339 384,334 407,344 C385,347 349,353 326,359 Z"/>
+
+            <!-- 눈 (좌) -->
+            <path d="M204,381 C218,364 250,361 266,388"/>
+            <path d="M204,381 C219,399 250,401 266,388"/>
+            <path d="M207,371 C223,352 254,350 270,377"/>
+            <!-- 눈 (우) -->
+            <path d="M396,381 C382,364 350,361 334,388"/>
+            <path d="M396,381 C381,399 350,401 334,388"/>
+            <path d="M393,371 C377,352 346,350 330,377"/>
+
+            <!-- 코 -->
+            <path d="M286,396 C281,426 278,452 275,470"/>
+            <path d="M314,396 C319,426 322,452 325,470"/>
+            <path d="M275,470 C263,470 253,480 255,491 C258,501 271,502 280,495"/>
+            <path d="M325,470 C337,470 347,480 345,491 C342,501 329,502 320,495"/>
+            <path d="M280,495 C290,500 310,500 320,495"/>
+            <path d="M266,489 C270,484 276,485 278,490"/>
+            <path d="M334,489 C330,484 324,485 322,490"/>
+
+            <!-- 인중 -->
+            <path d="M289,506 C289,522 289,532 291,540"/>
+            <path d="M311,506 C311,522 311,532 309,540"/>
+
+            <!-- 입술 -->
+            <path d="M239,552 C252,540 262,536 272,543 C282,533 318,533 328,543 C338,536 348,540 361,552"/>
+            <path d="M239,552 C270,557 330,557 361,552"/>
+            <path d="M239,552 C258,580 342,580 361,552"/>
+
+            <!-- 하안면 / 턱 -->
+            <path d="M266,598 C282,606 318,606 334,598"/>
+
+            <!-- 목 · 칼라 -->
+            <path d="M234,622 C230,660 228,682 226,700"/>
+            <path d="M366,622 C370,660 372,682 374,700"/>
+            <path d="M158,772 C198,744 238,718 266,702"/>
+            <path d="M442,772 C402,744 362,718 334,702"/>
+            <path d="M266,702 L300,752 L334,702"/>
+          </g>
+
+          <!-- ── 계측 기준선 ───────────────────── -->
+          <g stroke="#9c9c9c" stroke-width="0.7" stroke-dasharray="3 4" fill="none">
+            <!-- 정중선 -->
+            <line x1="300" y1="88" x2="300" y2="672"/>
+            <!-- 삼등분 -->
+            <line x1="96" y1="220" x2="504" y2="220"/>
+            <line x1="96" y1="360" x2="504" y2="360"/>
+            <line x1="96" y1="500" x2="504" y2="500"/>
+            <line x1="96" y1="640" x2="504" y2="640"/>
+          </g>
+          <g stroke="#c9c9c9" stroke-width="0.6" stroke-dasharray="2 5" fill="none">
+            <!-- 오등분 -->
+            <line x1="145" y1="330" x2="145" y2="452"/>
+            <line x1="207" y1="330" x2="207" y2="452"/>
+            <line x1="269" y1="330" x2="269" y2="452"/>
+            <line x1="331" y1="330" x2="331" y2="452"/>
+            <line x1="393" y1="330" x2="393" y2="452"/>
+            <line x1="455" y1="330" x2="455" y2="452"/>
+          </g>
+
+          <!-- ── 지시선 ─────────────────────────── -->
+          <g stroke="#0a0a0a" stroke-width="0.6" fill="none">
+            <path d="M366,300 L508,262"/>   <!-- A 헤어라인 차폐 -->
+            <path d="M398,380 L512,356"/>   <!-- B 캔탈 틸트 -->
+            <path d="M430,492 L516,516"/>   <!-- C 하악각 -->
+            <path d="M330,616 L468,652"/>   <!-- D 턱끝 -->
+            <path d="M146,392 L104,346"/>   <!-- E 관골 -->
+            <path d="M188,530 L106,572"/>   <!-- F 하악선 -->
+          </g>
+          <!-- ── 마커 ───────────────────────────── -->
+          <g fill="#ffffff" stroke="#0a0a0a" stroke-width="0.8">
+            <circle cx="520" cy="260" r="11"/>
+            <circle cx="524" cy="354" r="11"/>
+            <circle cx="528" cy="519" r="11"/>
+            <circle cx="480" cy="655" r="11"/>
+            <circle cx="95"  cy="338" r="11"/>
+            <circle cx="97"  cy="580" r="11"/>
+          </g>
+          <g fill="#0a0a0a" font-family="'JetBrains Mono',monospace" font-size="10.5"
+             text-anchor="middle" letter-spacing="0">
+            <text x="520" y="264">A</text>
+            <text x="524" y="358">B</text>
+            <text x="528" y="523">C</text>
+            <text x="480" y="659">D</text>
+            <text x="95"  y="342">E</text>
+            <text x="97"  y="584">F</text>
+          </g>
+          <!-- ── 삼등분 라벨 ─────────────────────── -->
+          <g fill="#9c9c9c" font-family="'JetBrains Mono',monospace" font-size="8.5" letter-spacing="0.12em">
+            <text x="34" y="290">상 1/3</text>
+            <text x="34" y="430">중 1/3</text>
+            <text x="34" y="574">하 1/3</text>
+          </g>
+        </svg>
+        <p class="figcap">Fig. 1 — Frontal contour reconstruction with proportional guides</p>
+      </div>
+
+      <div>
+        <div class="card" style="padding:24px 26px;">
+          <span class="label">Annotated observations</span>
+          <ul class="legend" style="margin-top:16px;">
+            <li><span class="k">A</span><span><b>헤어라인 차폐.</b> 두꺼운 사선 프린지가 이마를 거의 전면 차폐 → 상안면 1/3 계측 불가, 얼굴 길이·상안면 폭이 실제보다 짧고 좁게 읽힘.</span></li>
+            <li><span class="k">B</span><span><b>눈매.</b> 이중 눈꺼풀 라인 명확, 외안각이 내안각보다 소폭 높은 약양성 틸트. 중안면 최강 요소.</span></li>
+            <li><span class="k">C</span><span><b>하악각.</b> 정면에서 gonion 지점의 각짐이 관찰되지 않음. 둔각 경향 추정, 정량화 불가.</span></li>
+            <li><span class="k">D</span><span><b>턱끝.</b> 하악 정중부가 좁고 둥글며 수직 길이 짧음. 하안면 1/3의 종적 비중 부족.</span></li>
+            <li><span class="k">E</span><span><b>관골.</b> 광대 전방 투사 완만 → 중안면 자체 음영 형성이 약해 조명 의존도가 높음.</span></li>
+            <li><span class="k">F</span><span><b>하악선–경부 경계.</b> 턱밑 연부조직으로 경계 대비가 낮음. 총점 최대 감점 지점.</span></li>
+          </ul>
+        </div>
+        <div class="card tint" style="padding:20px 24px;margin-top:18px;">
+          <span class="label">Reading</span>
+          <p style="margin:10px 0 0;font-size:12.5px;color:var(--ink-70);">
+            강점(B)은 <b>중안면 상부</b>에, 약점(C·D·E·F)은 전부 <b>골격 투사와 하안면</b>에 몰려 있습니다.
+            개선 전략의 우선순위가 명확하게 한 방향으로 수렴한다는 뜻이며,
+            이는 산발적 약점을 가진 경우보다 유리한 조건입니다.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 02 SCORES ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">02</span>
+      <h2>항목별 점수 <em>Weighted Breakdown</em></h2>
+    </div>
+    <p class="sec-note">
+      9개 항목을 각각 10점 척도로 평가하고 가중치를 적용해 종합 점수를 산출했습니다.
+      척도 기준: <span class="num">5.0</span> = 동년배 평균, <span class="num">7.0</span> = 평균 이상,
+      <span class="num">8.5</span> 이상 = 최상위. 회색 눈금은 평균선(5.0)입니다.
+    </p>
+
+    <div class="figure-wrap">
+      <div>
+        <div class="scores">
+          <div class="score-row"><span class="nm">피부 상태</span><span class="wt">12%</span><span class="bar"><i style="width:78%"></i><u style="left:50%"></u></span><span class="vl">7.8</span></div>
+          <div class="score-row"><span class="nm">대칭성</span><span class="wt">15%</span><span class="bar"><i style="width:76%"></i><u style="left:50%"></u></span><span class="vl">7.6</span></div>
+          <div class="score-row"><span class="nm">눈매</span><span class="wt">12%</span><span class="bar"><i style="width:75%"></i><u style="left:50%"></u></span><span class="vl">7.5</span></div>
+          <div class="score-row"><span class="nm">비율 · 조화</span><span class="wt">20%</span><span class="bar"><i style="width:74%"></i><u style="left:50%"></u></span><span class="vl">7.4</span></div>
+          <div class="score-row"><span class="nm">입술 · 구강주위</span><span class="wt">6%</span><span class="bar"><i style="width:72%"></i><u style="left:50%"></u></span><span class="vl">7.2</span></div>
+          <div class="score-row"><span class="nm">코</span><span class="wt">6%</span><span class="bar"><i style="width:70%"></i><u style="left:50%"></u></span><span class="vl">7.0</span></div>
+          <div class="score-row"><span class="nm">헤어 · 그루밍</span><span class="wt">6%</span><span class="bar"><i style="width:68%"></i><u style="left:50%"></u></span><span class="vl">6.8</span></div>
+          <div class="score-row"><span class="nm">골격 구조</span><span class="wt">15%</span><span class="bar"><i style="width:59%"></i><u style="left:50%"></u></span><span class="vl">5.9</span></div>
+          <div class="score-row"><span class="nm">하안면 · 턱선</span><span class="wt">8%</span><span class="bar"><i style="width:56%"></i><u style="left:50%"></u></span><span class="vl">5.6</span></div>
+          <div class="scores-foot"><span class="nm">종합</span><span class="wt">100%</span><span class="bar"><i style="width:70.5%"></i><u style="left:50%"></u></span><span class="vl">7.0</span></div>
+        </div>
+        <p class="caveat" style="margin-top:20px;">
+          가중치는 정면 인상 형성에 대한 기여도를 기준으로 배분한 <b>설계값</b>이며,
+          외부 연구에서 검증된 계수가 아닙니다. 참고 항목으로 <b>포토제닉 적합도 6.5</b>
+          (현 촬영 조건 기준)를 별도 산출했으나 종합 점수에는 반영하지 않았습니다.
+        </p>
+      </div>
+
+      <div class="radar-box">
+        <svg viewBox="0 0 500 500" role="img" aria-label="항목별 점수 레이더 차트">
+          <!-- 격자 -->
+          <g fill="none" stroke="#efefef" stroke-width="0.8">
+            <polygon points="250.0,217.0 271.2,224.7 282.5,244.3 278.6,266.5 261.3,281.0 238.7,281.0 221.4,266.5 217.5,244.3 228.8,224.7"/>
+            <polygon points="250.0,184.0 292.4,199.4 315.0,238.5 307.2,283.0 272.6,312.0 227.4,312.0 192.8,283.0 185.0,238.5 207.6,199.4"/>
+            <polygon points="250.0,151.0 313.6,174.2 347.5,232.8 335.7,299.5 283.9,343.0 216.1,343.0 164.3,299.5 152.5,232.8 186.4,174.2"/>
+            <polygon points="250.0,118.0 334.8,148.9 380.0,227.1 364.3,316.0 295.1,374.0 204.9,374.0 135.7,316.0 120.0,227.1 165.2,148.9"/>
+          </g>
+          <polygon points="250.0,85.0 356.1,123.6 412.5,221.3 392.9,332.5 306.4,405.0 193.6,405.0 107.1,332.5 87.5,221.3 143.9,123.6"
+                   fill="none" stroke="#c9c9c9" stroke-width="1"/>
+          <!-- 평균선 5.0 -->
+          <polygon points="250.0,167.5 303.0,186.8 331.3,235.7 321.4,291.3 278.2,327.5 221.8,327.5 178.6,291.3 168.8,235.7 197.0,186.8"
+                   fill="none" stroke="#9c9c9c" stroke-width="0.8" stroke-dasharray="3 3"/>
+          <!-- 스포크 -->
+          <g stroke="#efefef" stroke-width="0.8">
+            <line x1="250" y1="250" x2="250.0" y2="85.0"/>
+            <line x1="250" y1="250" x2="356.1" y2="123.6"/>
+            <line x1="250" y1="250" x2="412.5" y2="221.3"/>
+            <line x1="250" y1="250" x2="392.9" y2="332.5"/>
+            <line x1="250" y1="250" x2="306.4" y2="405.0"/>
+            <line x1="250" y1="250" x2="193.6" y2="405.0"/>
+            <line x1="250" y1="250" x2="107.1" y2="332.5"/>
+            <line x1="250" y1="250" x2="87.5" y2="221.3"/>
+            <line x1="250" y1="250" x2="143.9" y2="123.6"/>
+          </g>
+          <!-- 데이터 -->
+          <polygon points="250.0,124.6 328.5,156.5 371.9,228.5 350.0,307.8 290.6,361.6 218.4,336.8 165.7,298.7 123.3,227.7 177.9,164.0"
+                   fill="#0a0a0a" fill-opacity="0.055" stroke="#0a0a0a" stroke-width="1.3"/>
+          <g fill="#0a0a0a">
+            <circle cx="250.0" cy="124.6" r="2.6"/><circle cx="328.5" cy="156.5" r="2.6"/>
+            <circle cx="371.9" cy="228.5" r="2.6"/><circle cx="350.0" cy="307.8" r="2.6"/>
+            <circle cx="290.6" cy="361.6" r="2.6"/><circle cx="218.4" cy="336.8" r="2.6"/>
+            <circle cx="165.7" cy="298.7" r="2.6"/><circle cx="123.3" cy="227.7" r="2.6"/>
+            <circle cx="177.9" cy="164.0" r="2.6"/>
+          </g>
+          <!-- 라벨 -->
+          <g font-family="'Noto Sans KR',sans-serif" font-size="11.5" font-weight="400" fill="#3d3d3d">
+            <text x="250.0" y="60.0" text-anchor="middle">대칭성</text>
+            <text x="377.3" y="106.3" text-anchor="start">비율·조화</text>
+            <text x="445.0" y="223.6" text-anchor="start">눈매</text>
+            <text x="421.5" y="357.0" text-anchor="start">코</text>
+            <text x="317.7" y="444.1" text-anchor="start">입술</text>
+            <text x="182.3" y="444.1" text-anchor="end">하안면·턱선</text>
+            <text x="78.5" y="357.0" text-anchor="end">골격 구조</text>
+            <text x="55.0" y="223.6" text-anchor="end">피부</text>
+            <text x="122.7" y="106.3" text-anchor="end">그루밍</text>
+          </g>
+        </svg>
+        <p class="figcap">Fig. 2 — 9-axis profile · 점선 = 평균(5.0)</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 03 MEASUREMENTS ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">03</span>
+      <h2>계측 데이터 <em>Anthropometric Estimates</em></h2>
+    </div>
+    <p class="sec-note">
+      단일 2D 정면 이미지에서 얻은 <b>추정값</b>입니다. 캘리브레이션된 3D 스캔이나 두부 규격 방사선
+      계측(cephalometry)이 아니므로 절대값이 아니라 구간으로 표기하고, 각 항목의 신뢰도를 병기했습니다.
+      참조 범위는 임상 심미 문헌에서 통용되는 관례적 기준이며, 인종·성별 규준으로서의
+      정확한 출처는 본 보고서에서 검증하지 않았습니다.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:27%">계측 항목</th>
+          <th style="width:19%">추정값</th>
+          <th style="width:17%">참조 범위</th>
+          <th style="width:23%">해석</th>
+          <th style="width:14%">신뢰도</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>안면 삼등분<span class="en">FACIAL THIRDS</span></td>
+          <td class="v">≈ 0.90 : 1.00 : 0.93</td>
+          <td class="v">1 : 1 : 1</td>
+          <td>하안면 소폭 짧음. 상안면은 프린지 차폐로 실측 불가</td>
+          <td><span class="conf lo">낮음</span></td>
+        </tr>
+        <tr>
+          <td>안면 폭 / 높이<span class="en">WIDTH-TO-HEIGHT</span></td>
+          <td class="v">≈ 1.80 – 1.90</td>
+          <td class="v">1.7 – 2.0</td>
+          <td>범위 내. 특별히 넓지도 좁지도 않음</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>안면 오등분<span class="en">FACIAL FIFTHS</span></td>
+          <td class="v">눈 폭 ≈ 1/5 구획</td>
+          <td class="v">각 1/5 균등</td>
+          <td>수평 분할 양호. 조화 점수의 주요 근거</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>내안각 거리 / 눈 폭<span class="en">INTERCANTHAL / EYE WIDTH</span></td>
+          <td class="v">≈ 1.00 – 1.10</td>
+          <td class="v">≈ 1.00</td>
+          <td>정상 범위 상단. 미세한 넓은 간격 인상</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>캔탈 틸트<span class="en">CANTHAL TILT</span></td>
+          <td class="v">≈ +2° – +5°</td>
+          <td class="v">남성 +2° – +6°</td>
+          <td>양호. 두부 경사에 따른 오차 포함</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>알라 폭 / 내안각 거리<span class="en">ALAR / INTERCANTHAL</span></td>
+          <td class="v">≈ 1.20 – 1.30</td>
+          <td class="v">≈ 1.00 – 1.10</td>
+          <td>코 기저부 약간 넓음. 동아시아 표준 고려 시 경미</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>코 폭 / 입 폭<span class="en">ALAR / MOUTH WIDTH</span></td>
+          <td class="v">≈ 0.70 – 0.75</td>
+          <td class="v">≈ 0.70</td>
+          <td>양호. 중·하안면 수평 균형 성립</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>상순 : 하순+턱<span class="en">LOWER-THIRD SPLIT</span></td>
+          <td class="v">≈ 1 : 1.8</td>
+          <td class="v">≈ 1 : 2</td>
+          <td>근접. 턱끝 수직 길이가 부족한 방향의 편차</td>
+          <td><span class="conf lo">낮음</span></td>
+        </tr>
+        <tr>
+          <td>하악각 (정면 추정)<span class="en">GONIAL ANGLE</span></td>
+          <td class="v">둔각 경향 · 정량화 불가</td>
+          <td class="v">약 120° – 130°</td>
+          <td>정면에서 gonion 각짐 미관찰. 측면 촬영 필요</td>
+          <td><span class="conf lo">낮음</span></td>
+        </tr>
+        <tr>
+          <td>좌우 눈썹 높이차<span class="en">BROW ASYMMETRY</span></td>
+          <td class="v">≈ 2 – 3 mm 상당</td>
+          <td class="v">&lt; 2 mm 무시 가능</td>
+          <td>경미. 표정근 습관 또는 두부 경사 기인 가능</td>
+          <td><span class="conf">중간</span></td>
+        </tr>
+        <tr>
+          <td>두부 회전 · 경사<span class="en">HEAD POSE</span></td>
+          <td class="v">미세 경사 (&lt; 3°)</td>
+          <td class="v">0°</td>
+          <td>모든 좌우 비교값에 계통 오차로 작용</td>
+          <td><span class="conf hi">높음</span></td>
+        </tr>
+        <tr>
+          <td>피부 표면 균일도<span class="en">SKIN UNIFORMITY</span></td>
+          <td class="v">상위 구간</td>
+          <td class="v">—</td>
+          <td>잡티·요철 적음. 단, 증명사진 보정 개입 배제 불가</td>
+          <td><span class="conf lo">낮음</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════ 04 STRENGTHS ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">04</span>
+      <h2>강점 <em>Strengths</em></h2>
+    </div>
+    <div class="grid2" style="margin-top:26px;">
+      <div class="card">
+        <ul class="findings">
+          <li>
+            <span class="idx">S1</span>
+            <div>
+              <b class="t">피부 균일도</b>
+              <p>톤 편차·색소 침착·표면 요철이 모두 적음. 안면 심미에서 피부는 가장 빠르게 체감 인상을 좌우하는 변수이며, 이미 상위 구간에서 시작합니다.</p>
+              <div class="tagrow"><span class="tag solid">최대 자산</span><span class="tag">보정 개입 검증 필요</span></div>
+            </div>
+          </li>
+          <li>
+            <span class="idx">S2</span>
+            <div>
+              <b class="t">눈매 구조</b>
+              <p>이중 눈꺼풀 라인이 명확하고 노출 각막 면적이 적정하며, 캔탈 틸트가 약양성입니다. 눈 성형의 심미적 적응증이 낮다는 의미이기도 합니다.</p>
+              <div class="tagrow"><span class="tag">개입 불필요</span></div>
+            </div>
+          </li>
+          <li>
+            <span class="idx">S3</span>
+            <div>
+              <b class="t">눈썹 밀도 · 직선형 형태</b>
+              <p>짙은 밀도와 낮은 아치의 직선형 눈썹이 상안면 프레임을 자체적으로 형성합니다. 부드러운 윤곽을 상쇄하는 몇 안 되는 남성적 대비 요소입니다.</p>
+            </div>
+          </li>
+          <li>
+            <span class="idx">S4</span>
+            <div>
+              <b class="t">입술 볼륨 균형</b>
+              <p>상·하순 비율이 균형에 가깝고 vermillion border(입술 경계선)가 선명합니다. 구각(입꼬리)이 하강하지 않아 무표정에서도 부정적 정서로 읽히지 않습니다.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <ul class="findings">
+          <li>
+            <span class="idx">S5</span>
+            <div>
+              <b class="t">좌우 대칭성</b>
+              <p>임상적으로 유의미한 편위(정중선 이탈, 안면 편측 위축, 교합 편차 시사 소견)는 관찰되지 않습니다. 눈썹 높이차와 두부 미세 경사 수준의 비대칭만 존재하며, 이는 일반 인구에서 정상 범위입니다.</p>
+            </div>
+          </li>
+          <li>
+            <span class="idx">S6</span>
+            <div>
+              <b class="t">수평 분할 조화</b>
+              <p>오등분 기준 눈·코·입 폭이 서로 경쟁하지 않습니다. 단일 요소가 시선을 독점하지 않는 <b>조화형</b> 구성으로, 요소별 교정보다 전체 대비 조정이 효율적인 유형입니다.</p>
+            </div>
+          </li>
+          <li>
+            <span class="idx">S7</span>
+            <div>
+              <b class="t">연령 대비 상태</b>
+              <p>비후·처짐·깊은 정적 주름 등 노화 지표가 관찰되지 않습니다. 예방적 관리(자외선 차단, 수면, 체성분)의 투자 회수율이 가장 높은 시기입니다.</p>
+              <div class="tagrow"><span class="tag">시간 민감</span></div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 05 WEAKNESSES ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">05</span>
+      <h2>개선 영역 <em>Limiting Factors</em></h2>
+    </div>
+    <p class="sec-note">
+      감점 기여도 순으로 정렬했습니다. 표현을 완화하지 않았으며, 정면 사진 1매로
+      판단 불가한 항목은 그대로 "판단 불가"로 표기했습니다.
+    </p>
+    <div class="card">
+      <ul class="findings">
+        <li>
+          <span class="idx">W1</span>
+          <div>
+            <b class="t">하악선–경부 경계의 대비 부족 <span class="num" style="color:var(--ink-30);font-size:11px;">· 최대 감점</span></b>
+            <p>턱밑(submental) 연부조직으로 인해 하악 하연이 목선과 시각적으로 분리되지 않습니다. 결과적으로 얼굴 하부가 하나의 부드러운 면으로 읽히며, 정면 인상에서 구조감이 손실됩니다. 원인은 골격(하악 형태)과 연부조직(체지방·부종) 두 축이 혼재하는데, 사진 1매로는 기여 비율을 분리할 수 없습니다.</p>
+            <div class="tagrow"><span class="tag solid">가장 큰 지렛대</span><span class="tag">연부조직 기여분 개선 가능</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W2</span>
+          <div>
+            <b class="t">턱끝 투사 및 수직 길이 부족</b>
+            <p>하악 정중부가 좁고 둥글며, 하안면 1/3의 종적 비중이 기준(1:1:1)보다 작습니다. 이 때문에 전체 인상이 실제 나이보다 어리고 부드럽게(boyish) 읽힙니다. 다만 전후방 투사량(pogonion 위치)은 <b>측면 사진 없이는 판단 불가</b>하며, 시술 논의의 전제 조건입니다.</p>
+            <div class="tagrow"><span class="tag">측면 데이터 필요</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W3</span>
+          <div>
+            <b class="t">관골 전방 투사 완만</b>
+            <p>광대의 전방·측방 투사가 약해 중안면이 스스로 음영을 만들지 못합니다. 이는 조명 의존도를 높이는 직접적 원인으로, 평면 확산광(현 증명사진 조건)에서 얼굴이 가장 불리하게 기록됩니다.</p>
+            <div class="tagrow"><span class="tag">조명 통제로 상당 부분 보완</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W4</span>
+          <div>
+            <b class="t">헤어스타일이 상안면을 은폐</b>
+            <p>두꺼운 사선 프린지가 이마를 거의 전면 차폐합니다. 상안면 높이가 시각적으로 삭제되어 (1) 얼굴 길이가 짧아 보이고, (2) 이미 부족한 하안면 길이와 함께 종적 비율의 여유가 사라지며, (3) 계측 자체가 불가능해집니다. 개선 난이도 대비 효과가 가장 높은 단일 항목입니다.</p>
+            <div class="tagrow"><span class="tag solid">즉시 개선 가능</span><span class="tag">비용 최소</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W5</span>
+          <div>
+            <b class="t">두상 실루엣의 평면성</b>
+            <p>측두부 볼륨이 부족하고 정수리 높이가 낮게 정리되어, 정면 실루엣이 납작한 사각에 가깝게 형성됩니다. 귀 주변 정리선도 모호해 윤곽 경계를 흐립니다.</p>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W6</span>
+          <div>
+            <b class="t">코 기저부 폭</b>
+            <p>알라(콧방울) 폭이 내안각 거리 대비 약 1.2–1.3배로 관례적 기준을 상회합니다. 다만 동아시아 계측 특성상 흔한 편차이며, 코 폭 : 입 폭 비율은 양호해 <b>독립적 개입 대상으로 권고하지 않습니다.</b></p>
+            <div class="tagrow"><span class="tag">개입 권고 안 함</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W7</span>
+          <div>
+            <b class="t">촬영 조건 자체의 불리함</b>
+            <p>완전 정면 0° + 눈높이 + 평면 확산광은 골격 정보를 가장 많이 소실시키는 조합입니다. 이 얼굴 유형(윤곽 대비 부족형)에서는 특히 손실이 큽니다. 즉 <b>사진상 인상이 실물보다 낮게 기록되었을 가능성이 유의미하게 존재합니다.</b></p>
+            <div class="tagrow"><span class="tag">프로토콜 변경으로 해결</span></div>
+          </div>
+        </li>
+        <li>
+          <span class="idx">W8</span>
+          <div>
+            <b class="t">미세 그루밍 미정리</b>
+            <p>미간·눈썹 상연 잔털, 눈썹 꼬리(lateral tail)의 마감 미흡. 개별 영향은 작지만 누적 정돈도(perceived grooming)에 직접 반영되는 항목입니다.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 06 ACTIONS ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">06</span>
+      <h2>실행 권장안 <em>Actionable Protocol</em></h2>
+    </div>
+    <p class="sec-note">
+      되돌릴 수 있고 비용이 낮은 순서로 배치했습니다. 각 항목은 앞 절의 감점 요인
+      (W1–W8)에 대응합니다. 의학적 시술은 마지막 단계에만 배치했습니다.
+    </p>
+
+    <div class="grid2" style="margin-top:26px;">
+      <div class="action">
+        <span class="label">A · 헤어 &amp; 눈썹 — W4 W5 W8</span>
+        <h3>구조 대비를 만드는 가장 저렴한 수단</h3>
+        <ul>
+          <li><b>이마 노출 30–50%.</b> 프린지를 내리는 방향을 버리고, 뿌리 볼륨 + 사이드 흐름으로 전환. 상안면 높이를 되찾으면 종적 비율의 여유가 생깁니다.</li>
+          <li><b>측면 실루엣 정리.</b> 측두부는 짧게 좁히고 상부에 높이를 남기는 구성(사이드 타이트 / 톱 볼륨). 두상 폭이 줄면 상대적으로 턱선 대비가 개선됩니다.</li>
+          <li><b>귀 주변 정리선 명확화.</b> 3–5주 주기 커트로 경계선을 유지.</li>
+          <li><b>제품.</b> 광택 왁스 대신 매트 텍스처(클레이·파우더). 광택은 피지·부종 인상을 강조합니다.</li>
+          <li><b>눈썹은 하연을 건드리지 않습니다.</b> 직선형 유지가 자산이므로, 미간·상연 잔털과 꼬리 마감만 정리. 각을 인위적으로 만들거나 문신하는 방향은 권고하지 않습니다.</li>
+        </ul>
+        <p class="caveat">근거 수준: 미용적 경험칙. 임상 연구 기반이 아니며 개인 두상·모질에 따라 결과가 달라집니다.</p>
+      </div>
+
+      <div class="action">
+        <span class="label">B · 피부 — S1 유지</span>
+        <h3>이미 강점인 항목의 방어</h3>
+        <ul>
+          <li><b>자외선 차단이 1순위.</b> SPF 50+ / PA++++ 를 매일, 실내 포함. 톤 균일도를 잃는 가장 큰 단일 변수입니다.</li>
+          <li><b>저자극 기본 루틴.</b> 과한 세정·물리적 스크럽 제거, 세라마이드·판테놀 계열 보습으로 장벽 유지.</li>
+          <li><b>레티노이드 도입.</b> 저농도에서 주 2–3회로 시작해 내성 확보 후 증량. 결·모공·광노화 개선에 대해 <b>임상 근거가 확립된</b> 성분군입니다.</li>
+          <li><b>국소 홍조 관리.</b> 코 주변 홍조·피지에는 나이아신아마이드 등 저자극 성분을 국소 적용.</li>
+          <li><b>변경은 한 번에 하나.</b> 신규 활성 성분은 단독 도입 후 4주 관찰. 동시 도입은 원인 규명을 불가능하게 만듭니다.</li>
+        </ul>
+        <p class="caveat">제품·농도·병용 여부는 개인 피부 반응에 따라 달라집니다. 지속 홍조·염증 시 피부과 상담이 우선입니다.</p>
+      </div>
+
+      <div class="action">
+        <span class="label">C · 체성분 &amp; 부종 — W1 (최대 지렛대)</span>
+        <h3>턱선 대비를 결정하는 실제 변수</h3>
+        <ul>
+          <li><b>체지방 감량.</b> 안면 연부조직량은 전신 체지방과 상관관계가 있으며, 하악선 정의도는 체지방률이 낮아질 때 뚜렷하게 개선되는 경향이 있습니다. 개인차와 부위별 감소 순서 차이는 통제 불가입니다.</li>
+          <li><b>부종 통제.</b> 나트륨·알코올 섭취와 수면 부족은 아침 안면 부종의 주된 조절 가능 요인입니다. 취침 3시간 전 수분·염분 제한, 수면 7–8시간 확보.</li>
+          <li><b>자세 교정.</b> 거북목(forward head posture)은 턱밑 라인을 시각적으로 붕괴시킵니다. 흉추 신전·후두하근 이완·chin tuck을 일상 루틴으로 편성.</li>
+          <li><b>호흡·구강 자세.</b> 코호흡 유지, 이악물기(clenching) 회피. 단, 성인기에 <b>골격이 유의하게 변한다는 주장(이른바 mewing)은 근거가 불충분</b>합니다. 자세 위생 수준으로만 채택하십시오.</li>
+          <li><b>불필요한 개입.</b> 저작근 과활성(사각턱) 소견은 관찰되지 않으므로 교근 축소 목적의 개입은 대상이 아닙니다.</li>
+        </ul>
+        <p class="caveat">특정 체지방률 목표치는 개인의 신장·근육량·건강 상태에 따라 달라지므로 본 보고서에서 수치로 지정하지 않습니다.</p>
+      </div>
+
+      <div class="action">
+        <span class="label">D · 스타일링 &amp; 촬영 — W3 W7</span>
+        <h3>같은 얼굴을 더 정확하게 기록하기</h3>
+        <ul>
+          <li><b>칼라 선택.</b> 스프레드·세미와이드 칼라의 첫 단추 개방 또는 정돈된 크루넥. 하이넥·터틀넥은 하악선을 덮으므로 회피.</li>
+          <li><b>얼굴 주변 색.</b> 짙은 네이비·차콜 계열이 윤곽 대비를 보조합니다. 현재 착장은 적절한 선택입니다.</li>
+          <li><b>안경(선택).</b> 각이 있는 스퀘어·브로우라인 프레임이 부드러운 윤곽을 상쇄합니다. 라운드·무테는 역효과.</li>
+          <li><b>촬영 각도.</b> 정면 0°가 아니라 7–15° 오프앵글, 카메라는 눈높이 또는 소폭 위.</li>
+          <li><b>조명.</b> 45° 상방 단일 광원으로 관골·하악선 음영을 확보. 평면 링라이트는 이 얼굴에 가장 불리합니다.</li>
+          <li><b>렌즈·거리.</b> 50–85 mm 환산 화각, 피사체 거리 1.5 m 이상으로 광각 왜곡 제거.</li>
+          <li><b>표정.</b> 완전 무표정 대신 구각을 소폭 올린 미세 긴장 — 눈매(S2)가 활성화됩니다.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="action" style="margin-top:18px;">
+      <span class="label">E · 의학적 옵션 — 마지막 단계</span>
+      <h3>순서를 지키는 것이 유일한 권고 사항</h3>
+      <div class="grid3" style="margin-top:16px;">
+        <div>
+          <span class="kicker">1차 · 비침습</span>
+          <p style="font-size:12.5px;color:var(--ink-70);margin:8px 0 0;">A–D 전 항목을 최소 6개월 선행. 비용 0, 완전 가역. 이 단계에서 W1의 연부조직 기여분이 해소되면 이후 논의의 상당 부분이 불필요해집니다.</p>
+        </div>
+        <div>
+          <span class="kicker">2차 · 가역적 시술</span>
+          <p style="font-size:12.5px;color:var(--ink-70);margin:8px 0 0;">턱끝 볼륨 보강 계열의 가역적 옵션은 검토 가능 범위입니다. 다만 효과와 부작용은 시술자 역량에 크게 의존하며, 본 보고서는 특정 시술을 추천하지 않습니다.</p>
+        </div>
+        <div>
+          <span class="kicker">3차 · 침습</span>
+          <p style="font-size:12.5px;color:var(--ink-70);margin:8px 0 0;">턱끝 골성형·보형물 등은 <b>정면 사진만으로 적응증 판단이 불가능</b>합니다. 측면 두부 규격 촬영과 전문의 대면 진료가 선행 조건입니다.</p>
+        </div>
+      </div>
+      <p class="caveat"><b>불필요 판단:</b> 눈·코 영역은 점수와 계측 모두 양호하여 심미적 시술의 필요성이 낮습니다. 개입 대상을 하안면 한 축으로 좁히는 것이 비용·위험 대비 합리적입니다.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 07 ROADMAP ═══════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">07</span>
+      <h2>우선순위 로드맵 <em>Impact vs. Effort</em></h2>
+    </div>
+    <p class="sec-note">
+      영향도(Impact)와 소요 노력(Effort)은 상대 평가입니다. 상단 항목부터 순차 실행을
+      권고하며, 하단 항목은 상단이 완료되기 전에는 판단 자체가 불가능합니다.
+    </p>
+
+    <div style="margin-top:24px;">
+      <div class="phase">
+        <span class="ph">PHASE 0</span>
+        <div>
+          <b class="t">헤어 재구성 · 눈썹 정리 · 자외선 차단 · 자세</b>
+          <p>A 전체 + B 1항 + C 3항. 되돌릴 수 있고 비용이 거의 없으며 결과가 즉시 확인됩니다.</p>
+        </div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><span>IMPACT</span></div>
+        <div class="dots"><i class="f"></i><i></i><i></i><i></i><i></i><span>EFFORT</span></div>
+      </div>
+      <div class="phase">
+        <span class="ph">PHASE 1</span>
+        <div>
+          <b class="t">피부 루틴 정착 · 부종 통제 · 촬영 프로토콜 전환</b>
+          <p>B 전체 + C 2항 + D 전체. 강점 방어와 기록 조건 개선을 동시 수행.</p>
+        </div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><span>IMPACT</span></div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i></i><i></i><i></i><span>EFFORT</span></div>
+      </div>
+      <div class="phase">
+        <span class="ph">PHASE 2</span>
+        <div>
+          <b class="t">체성분 개선</b>
+          <p>C 1항. 유일하게 하안면 윤곽을 비침습적으로 실제 변화시킬 수 있는 축이며, 동시에 가장 오래 걸립니다.</p>
+        </div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><span>IMPACT</span></div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><span>EFFORT</span></div>
+      </div>
+      <div class="phase">
+        <span class="ph">PHASE 3</span>
+        <div>
+          <b class="t">재평가 · 측면 데이터 확보 후 시술 여부 판단</b>
+          <p>동일 조건(각도·조명·거리)에서 재촬영하고, 정면·측면·45° 3면 데이터를 확보한 뒤에만 E 단계를 검토합니다.</p>
+        </div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i></i><i></i><i></i><span>IMPACT</span></div>
+        <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><span>EFFORT</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ FOOTER ═══════════════ -->
+  <footer>
+    <span class="label">Limitations &amp; Disclaimer</span>
+    <div class="disc">
+      <ol>
+        <li><b>단일 2D 정면 이미지 기반입니다.</b> 측면·45° 데이터, 3D 스캔, 두부 규격 방사선 계측이 없으므로 전후방 투사(코·턱끝), 하악각, 안면 심도는 원리적으로 판단할 수 없습니다. 해당 항목은 본문에서 "판단 불가"로 명시했습니다.</li>
+        <li><b>계측값은 픽셀 기반 추정치입니다.</b> 캘리브레이션되지 않았고 두부 미세 경사에 따른 계통 오차를 포함하므로, 절대값 대신 구간과 신뢰도로 표기했습니다.</li>
+        <li><b>점수와 가중치는 본 보고서의 설계값입니다.</b> 외부 연구에서 검증된 계수가 아니며, 백분위 추정치는 검증된 규준 데이터베이스에 근거하지 않습니다 (Unverified).</li>
+        <li><b>이미지 보정 여부를 확인할 수 없습니다.</b> 증명사진은 피부 톤·질감 보정이 관행적으로 적용되므로, 피부 항목은 실제보다 높게 평가되었을 가능성이 있습니다.</li>
+        <li><b>심미 평가는 문화·시대·개인 선호에 의존합니다.</b> 본 보고서의 참조 범위는 임상 심미 문헌에서 통용되는 관례적 기준이며 보편적 규범이 아닙니다.</li>
+        <li><b>의학적 진단이나 처방이 아닙니다.</b> 시술·약제 관련 서술은 일반 정보이며, 실제 결정은 대면 진료를 통해야 합니다.</li>
+      </ol>
+    </div>
+    <div class="signoff">
+      <span class="kicker">Facial Aesthetics Report · No. FA—2608—01</span>
+      <span class="kicker">Single frontal image · 2D estimate · Confidence: Moderate</span>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
