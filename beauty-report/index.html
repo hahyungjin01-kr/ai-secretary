@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>안면 미학 리포트 · Facial Assessment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #111111;
+      --ink-soft: #3a3a3a;
+      --mute: #6e6e6e;
+      --line: #d9d9d4;
+      --line-strong: #bdbdb6;
+      --paper: #fbfbf8;
+      --card: #ffffff;
+      --hair: 1px;
+      --radius: 18px;
+      --max: 1080px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+      font-weight: 300;
+      letter-spacing: -0.01em;
+      line-height: 1.65;
+    }
+
+    body {
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 48px 28px 80px;
+    }
+
+    .serif {
+      font-family: "Cormorant Garamond", "Times New Roman", serif;
+      letter-spacing: 0.02em;
+    }
+
+    /* Header */
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 24px;
+      padding-bottom: 22px;
+      border-bottom: var(--hair) solid var(--ink);
+    }
+
+    .brand-kicker {
+      font-size: 11px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--mute);
+      font-weight: 400;
+    }
+
+    h1 {
+      margin-top: 8px;
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 500;
+      line-height: 1.1;
+    }
+
+    .meta {
+      text-align: right;
+      font-size: 12px;
+      color: var(--mute);
+      line-height: 1.8;
+    }
+
+    .meta strong {
+      display: block;
+      color: var(--ink);
+      font-weight: 400;
+    }
+
+    .subhead {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0 36px;
+      font-size: 12px;
+      color: var(--mute);
+      border-bottom: var(--hair) solid var(--line);
+      margin-bottom: 36px;
+    }
+
+    /* Hero */
+    .hero {
+      display: grid;
+      grid-template-columns: 0.92fr 1.08fr;
+      gap: 28px;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      background: var(--card);
+      border: var(--hair) solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .portrait-card {
+      padding: 28px 20px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .portrait-label {
+      align-self: stretch;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--mute);
+      margin-bottom: 8px;
+      padding: 0 12px;
+    }
+
+    .face-svg {
+      width: min(100%, 340px);
+      height: auto;
+    }
+
+    .portrait-caption {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--mute);
+      letter-spacing: 0.08em;
+    }
+
+    .score-card {
+      padding: 32px 36px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100%;
+    }
+
+    .score-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .score-ring-wrap {
+      position: relative;
+      width: 148px;
+      height: 148px;
+      flex-shrink: 0;
+    }
+
+    .score-ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+
+    .score-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .score-center .num {
+      font-size: 48px;
+      line-height: 0.9;
+      font-weight: 500;
+    }
+
+    .score-center .den {
+      font-size: 12px;
+      color: var(--mute);
+      letter-spacing: 0.16em;
+      margin-top: 6px;
+    }
+
+    .verdict h2 {
+      font-size: 13px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      font-weight: 400;
+      color: var(--mute);
+      margin-bottom: 10px;
+    }
+
+    .verdict p {
+      font-size: 18px;
+      line-height: 1.55;
+      font-weight: 400;
+      max-width: 36em;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 22px 0 18px;
+    }
+
+    .chip {
+      border: var(--hair) solid var(--line-strong);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--ink-soft);
+    }
+
+    .note {
+      font-size: 13px;
+      color: var(--ink-soft);
+      border-top: var(--hair) solid var(--line);
+      padding-top: 16px;
+    }
+
+    /* Metrics */
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin: 40px 0 14px;
+    }
+
+    .section-title h3 {
+      font-size: 22px;
+      font-weight: 500;
+    }
+
+    .section-title span {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--mute);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 18px 18px 16px;
+    }
+
+    .metric .k {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      color: var(--mute);
+      margin-bottom: 10px;
+    }
+
+    .metric .v {
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 500;
+    }
+
+    .bar {
+      margin-top: 14px;
+      height: 2px;
+      background: var(--line);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      background: var(--ink);
+    }
+
+    .metric p {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--ink-soft);
+      line-height: 1.5;
+    }
+
+    /* Analysis */
+    .analysis {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .block { padding: 26px 28px 24px; }
+
+    .block h4 {
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--mute);
+      font-weight: 400;
+      margin-bottom: 12px;
+    }
+
+    .block h5 {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 18px 0 6px;
+    }
+
+    .block h5:first-of-type { margin-top: 0; }
+
+    .block p, .block li {
+      font-size: 14px;
+      color: var(--ink-soft);
+    }
+
+    .block ul {
+      padding-left: 16px;
+    }
+
+    .block li + li { margin-top: 6px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 0;
+      border-bottom: var(--hair) solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      font-weight: 400;
+      color: var(--mute);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    td:last-child, th:last-child { text-align: right; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .plus li::marker { color: var(--ink); }
+    .minus li::marker { color: var(--mute); }
+
+    .actions {
+      margin-top: 12px;
+      padding: 28px;
+    }
+
+    .actions ol {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px 32px;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .actions li {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--ink-soft);
+    }
+
+    .actions li::before {
+      content: counter(step, decimal-leading-zero);
+      font-family: "Cormorant Garamond", serif;
+      font-size: 22px;
+      color: var(--ink);
+      line-height: 1.1;
+    }
+
+    .actions strong {
+      display: block;
+      color: var(--ink);
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    footer {
+      margin-top: 36px;
+      padding-top: 16px;
+      border-top: var(--hair) solid var(--ink);
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      font-size: 11px;
+      color: var(--mute);
+      line-height: 1.7;
+    }
+
+    @media (max-width: 860px) {
+      .hero, .metrics, .analysis, .split, .actions ol, .masthead {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+      .masthead, .meta, .subhead { text-align: left; }
+      .subhead { flex-direction: column; }
+      .score-top { flex-direction: column; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .page { padding: 0; }
+      .card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <div class="brand-kicker serif">Atelier · Private Assessment</div>
+        <h1 class="serif">안면 미학 리포트</h1>
+      </div>
+      <div class="meta">
+        <strong>No. 2026-0820-01</strong>
+        촬영 유형 · 정면 / ID 조명<br />
+        평가일 · 2026. 08. 20
+      </div>
+    </header>
+
+    <div class="subhead">
+      <span>SUBJECT · MALE · EST. LATE TEENS–EARLY 20s · EAST ASIAN</span>
+      <span>METHOD · 단일 정면 사진 시각 분석 · 10점 상대 척도</span>
+    </div>
+
+    <section class="hero">
+      <article class="card portrait-card">
+        <div class="portrait-label">
+          <span>Contour</span>
+          <span>Front · 1:1</span>
+        </div>
+        <svg class="face-svg" viewBox="0 0 320 430" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="정면 얼굴 윤곽선">
+          <!-- guide thirds -->
+          <line x1="70" y1="118" x2="250" y2="118" stroke="#e6e6e1" stroke-width="0.6" />
+          <line x1="72" y1="188" x2="248" y2="188" stroke="#e6e6e1" stroke-width="0.6" />
+          <line x1="78" y1="258" x2="242" y2="258" stroke="#e6e6e1" stroke-width="0.6" />
+          <line x1="160" y1="96" x2="160" y2="312" stroke="#ecece7" stroke-width="0.6" stroke-dasharray="2 4" />
+
+          <!-- hair mass -->
+          <path d="M78 168
+                   C72 128 86 84 128 72
+                   C146 66 168 62 186 70
+                   C214 82 236 104 244 142
+                   C248 162 246 184 238 198
+                   C232 176 228 150 214 128
+                   C198 106 176 96 160 96
+                   C138 96 116 112 102 138
+                   C90 158 84 176 82 196
+                   C80 186 78 176 78 168 Z"
+                stroke="#111" stroke-width="1.15" stroke-linejoin="round" />
+          <path d="M118 86 C132 102 138 118 140 138" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+          <path d="M168 74 C174 96 178 118 176 142" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+          <path d="M204 96 C206 118 210 140 214 158" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+          <path d="M98 120 C96 142 94 162 96 182" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+
+          <!-- face contour: oval-heart, soft jaw -->
+          <path d="M96 168
+                   C94 198 98 228 110 252
+                   C122 276 140 294 160 300
+                   C180 294 198 276 210 252
+                   C222 228 226 198 224 168
+                   C222 138 210 114 186 102
+                   C174 96 166 96 160 96
+                   C154 96 146 96 134 102
+                   C110 114 98 138 96 168 Z"
+                stroke="#111" stroke-width="1.2" stroke-linejoin="round" />
+
+          <!-- brows -->
+          <path d="M104 168 C118 160 132 158 146 164" stroke="#111" stroke-width="2.1" stroke-linecap="round" />
+          <path d="M174 164 C188 158 202 160 216 168" stroke="#111" stroke-width="2.1" stroke-linecap="round" />
+
+          <!-- eyes -->
+          <path d="M108 180 C118 174 132 174 144 180 C132 186 118 186 108 180 Z" stroke="#111" stroke-width="1.1" />
+          <path d="M176 180 C188 174 202 174 212 180 C202 186 188 186 176 180 Z" stroke="#111" stroke-width="1.1" />
+          <circle cx="126" cy="180" r="3.2" fill="#111" />
+          <circle cx="194" cy="180" r="3.2" fill="#111" />
+
+          <!-- nose -->
+          <path d="M160 176 L160 218" stroke="#111" stroke-width="1" stroke-linecap="round" />
+          <path d="M148 226 C154 232 166 232 172 226" stroke="#111" stroke-width="1.05" stroke-linecap="round" />
+          <path d="M148 224 C146 220 147 216 150 216" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+          <path d="M172 224 C174 220 173 216 170 216" stroke="#111" stroke-width="0.9" stroke-linecap="round" />
+
+          <!-- mouth -->
+          <path d="M140 250 C150 246 170 246 180 250" stroke="#111" stroke-width="1.1" stroke-linecap="round" />
+          <path d="M140 250 C152 258 168 258 180 250" stroke="#111" stroke-width="1.1" stroke-linecap="round" />
+          <path d="M148 250 C156 252 164 252 172 250" stroke="#111" stroke-width="0.7" />
+
+          <!-- ears -->
+          <path d="M94 176 C84 180 82 196 90 210 C94 216 98 214 100 208" stroke="#111" stroke-width="1" stroke-linecap="round" />
+          <path d="M226 176 C236 180 238 196 230 210 C226 216 222 214 220 208" stroke="#111" stroke-width="1" stroke-linecap="round" />
+
+          <!-- neck + collar -->
+          <path d="M138 296 C140 318 144 338 148 352" stroke="#111" stroke-width="1" stroke-linecap="round" />
+          <path d="M182 296 C180 318 176 338 172 352" stroke="#111" stroke-width="1" stroke-linecap="round" />
+          <path d="M108 360 C128 348 148 352 160 368 C172 352 192 348 212 360
+                   L230 372 C200 356 180 378 160 392 C140 378 120 356 90 372 Z"
+                stroke="#111" stroke-width="1.15" stroke-linejoin="round" />
+          <path d="M160 368 L160 392" stroke="#111" stroke-width="0.9" />
+
+          <!-- proportion ticks -->
+          <text x="254" y="122" fill="#9a9a94" font-size="8" font-family="Cormorant Garamond, serif">I</text>
+          <text x="254" y="192" fill="#9a9a94" font-size="8" font-family="Cormorant Garamond, serif">II</text>
+          <text x="254" y="262" fill="#9a9a94" font-size="8" font-family="Cormorant Garamond, serif">III</text>
+        </svg>
+        <p class="portrait-caption serif">LINE STUDY · OVAL–HEART · SOFT GONIAL ANGLE</p>
+      </article>
+
+      <article class="card score-card">
+        <div class="score-top">
+          <div class="score-ring-wrap" aria-label="종합 7.6점">
+            <svg viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="52" stroke="#e8e8e3" stroke-width="1.25" fill="none" />
+              <circle cx="60" cy="60" r="52" stroke="#111" stroke-width="1.25" fill="none"
+                      stroke-dasharray="247.4" stroke-dashoffset="59.4" stroke-linecap="round" />
+            </svg>
+            <div class="score-center">
+              <span class="num serif">7.6</span>
+              <span class="den">/ 10</span>
+            </div>
+          </div>
+          <div class="verdict">
+            <h2>Executive note</h2>
+            <p>피부와 눈 비율이 강점인 청년형 얼굴. 골격은 부드럽고 하악 정의가 약해, 또렷한 조각미보다는 단정한 호감형에 가깝다.</p>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip">타입 · 소프트 오벌</span>
+          <span class="chip">인상 · 유스풀 / 온화</span>
+          <span class="chip">추정 구간 · 상위 20–30%</span>
+          <span class="chip">한계 · 정면 1컷</span>
+        </div>
+        <p class="note">연예인급 골상(각진 하악·높은 콧대·강한 광대 분리)은 아니다. 현재 매력의 대부분은 피부 균일도, 좌우 대칭, 눈의 존재감에서 나온다. 점수는 과대평가를 피한 보수적 채점이다.</p>
+      </article>
+    </section>
+
+    <div class="section-title">
+      <h3 class="serif">세부 점수</h3>
+      <span>Visual metrics · estimated</span>
+    </div>
+    <section class="metrics">
+      <article class="card metric">
+        <div class="k"><span>좌우 대칭</span><span>weight 18%</span></div>
+        <div class="v serif">8.4</div>
+        <div class="bar"><i style="width:84%"></i></div>
+        <p>눈·코·입의 중심축 정렬이 양호. 일반 범위의 미세 비대칭만 관찰.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>수직 비율</span><span>weight 16%</span></div>
+        <div class="v serif">8.0</div>
+        <div class="bar"><i style="width:80%"></i></div>
+        <p>이마–중안부–하안부 삼등분에 근접. 하안부가 아주 짧지는 않음.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>눈 / 중안부</span><span>weight 14%</span></div>
+        <div class="v serif">8.2</div>
+        <div class="bar"><i style="width:82%"></i></div>
+        <p>눈이 크고 간격이 한 눈 너비에 가까움. 얼굴의 초점.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>골격 · 턱선</span><span>weight 16%</span></div>
+        <div class="v serif">6.7</div>
+        <div class="bar"><i style="width:67%"></i></div>
+        <p>하악각이 둥글다. 측면 입체감은 이 사진만으로도 약할 것으로 추정.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>코</span><span>weight 10%</span></div>
+        <div class="v serif">7.3</div>
+        <div class="bar"><i style="width:73%"></i></div>
+        <p>정면 직선, 끝은 둥글다. 콧대 높이는 중간. 과하지 않으나 존재감은 약함.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>입술 · 하안부</span><span>weight 8%</span></div>
+        <div class="v serif">7.6</div>
+        <div class="bar"><i style="width:76%"></i></div>
+        <p>중등 볼륨, 좌우 대칭. 큐피드보우는 약하고 입꼬리가 살짝 올라감.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>피부</span><span>weight 12%</span></div>
+        <div class="v serif">8.6</div>
+        <div class="bar"><i style="width:86%"></i></div>
+        <p>이 컷에서 가장 강한 자산. 톤이 고르고 트러블이 거의 없음. 조명 보정 가능성 있음.</p>
+      </article>
+      <article class="card metric">
+        <div class="k"><span>헤어 실루엣</span><span>weight 6%</span></div>
+        <div class="v serif">7.9</div>
+        <div class="bar"><i style="width:79%"></i></div>
+        <p>커튼형 볼륨이 오벌형과 맞음. 옆 부피가 남으면 얼굴이 넓어 보일 수 있음.</p>
+      </article>
+    </section>
+
+    <div class="section-title">
+      <h3 class="serif">형태 분석</h3>
+      <span>Structure · proportion · tissue</span>
+    </div>
+    <section class="analysis">
+      <article class="card block">
+        <h4>Reading</h4>
+        <h5>대칭</h5>
+        <p>정면 기준 양측 눈의 높이, 콧구멍, 입꼬리 위치가 잘 맞는다. 고도 비대칭(사경, 한쪽 눈 처짐, 턱 편향)은 이 해상도에서 보이지 않는다. 8점대는 ‘완벽’이 아니라 ‘일상 대화 거리에서 비대칭이 거의 읽히지 않음’을 뜻한다.</p>
+
+        <h5>비율</h5>
+        <p>고전적 삼등분(헤어라인–미간, 미간–코끝, 코끝–턱끝)에 가깝다. 눈 간격은 대략 한 눈 너비. 콧볼 폭은 내안각 정렬에 대체로 부합. 얼굴 폭 대비 하악 폭이 좁지 않고 둥글게 이어져, 하관이 ‘잘린’ 느낌은 없다. 대신 각이 없어 V라인이 아니다.</p>
+
+        <h5>골격</h5>
+        <p>광대는 돌출되지 않았고, 하악각(gonial angle) 정의가 약하다. 청년기 피하지방과 부드러운 하관이 겹쳐 친근한 인상을 만든다. 같은 이유로 측면·3/4 각도에서 입체감이 떨어질 여지가 크다. 남성 미학에서 자주 점수를 깎는 지점이다.</p>
+
+        <h5>연조직 · 피부</h5>
+        <p>피부는 매끈하고 톤이 균일하다. 흉터·홍조·여드름은 이 사진에서 확인되지 않는다. 다만 ID 조명(정면 확산광)은 질감을 지우는 경향이 있어, 실제 모공·유분은 매크로 샷 없이는 확정 불가. 눈썹은 밀도 높고 형태는 직선에 가깝다. 하단 잔털이 눈두덩을 조금 눌러 보인다.</p>
+      </article>
+
+      <article class="card block">
+        <h4>Canon check</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>관찰</th>
+              <th>판정</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>수직 삼등분</td>
+              <td>거의 균등</td>
+              <td>양호</td>
+            </tr>
+            <tr>
+              <td>눈 간격</td>
+              <td>≈ 1 eye width</td>
+              <td>양호</td>
+            </tr>
+            <tr>
+              <td>콧볼–내안각</td>
+              <td>대체로 정렬</td>
+              <td>양호</td>
+            </tr>
+            <tr>
+              <td>중안부 높이</td>
+              <td>과장되지 않음</td>
+              <td>보통+</td>
+            </tr>
+            <tr>
+              <td>하악각</td>
+              <td>둥글고 약함</td>
+              <td>미흡</td>
+            </tr>
+            <tr>
+              <td>턱끝 투사</td>
+              <td>정면만으로는 중간 추정</td>
+              <td>불확정</td>
+            </tr>
+            <tr>
+              <td>피부 균일도</td>
+              <td>매우 높음</td>
+              <td>우수</td>
+            </tr>
+            <tr>
+              <td>눈썹–안검 공간</td>
+              <td>약간 답답</td>
+              <td>개선 여지</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top:16px;font-size:12px;color:#6e6e6e;">수치 계측이 아닌 정면 사진 추정. 프로필·45° 컷이 없으면 콧대 높이·턱끝 전후방 위치는 확정하지 않음.</p>
+      </article>
+    </section>
+
+    <section class="split">
+      <article class="card block">
+        <h4>Strengths</h4>
+        <ul class="plus">
+          <li>좌우 대칭이 안정적이다. 이목구비가 ‘삐뚤어 보이지’ 않는다.</li>
+          <li>눈이 크고 얼굴 대비 비율이 좋아, 첫인상의 초점이 명확하다.</li>
+          <li>피부 클리어니스가 높다. 정돈된 인상에서 가장 비싼 요소.</li>
+          <li>수직 비율이 무너지지 않아 이목구비가 한쪽으로 몰려 보이지 않는다.</li>
+          <li>헤어 볼륨이 이마 높이를 보완해 오벌형을 살린다.</li>
+        </ul>
+      </article>
+      <article class="card block">
+        <h4>Gaps</h4>
+        <ul class="minus">
+          <li>턱선이 부드럽다. 각진 남성 골격으로 읽히지 않는다.</li>
+          <li>코 끝이 둥글고 콧대 존재감이 약해, 중안부가 평면적으로 보일 수 있다.</li>
+          <li>눈썹 하단이 정리되지 않으면 눈이 작아 보인다.</li>
+          <li>입술의 윤곽(큐피드보우)이 약해 하안부가 심심하다.</li>
+          <li>정면만 보면 호감, 측면은 미확인. 입체감 점수는 보류·하향.</li>
+        </ul>
+      </article>
+    </section>
+
+    <div class="section-title">
+      <h3 class="serif">실행 권고</h3>
+      <span>Grooming · cut · wardrobe</span>
+    </div>
+    <section class="card actions">
+      <ol>
+        <li>
+          <div>
+            <strong>눈썹 하단만 정리</strong>
+            아치를 만들지 말 것. 아래 잔털만 정리해 안검 세로 공간을 2–3mm 연다. 농도는 유지.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>사이드 볼륨 축소</strong>
+            윗머리 커튼은 유지하고 측두부만 짧게. 둥근 하관을 넓혀 보이지 않게 하는 가장 싼 교정.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>턱선은 깎지 말고 드러낼 것</strong>
+            극단 다이어트보다 자세(전방머리) 교정, 목선이 보이는 칼라, 측면 조명. 하악 각도는 그루밍으로 과장하지 말 것.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>피부 루틴 유지, 광택 조절</strong>
+            클렌징·보습·자외선 차단이면 충분. 과도한 하이라이터·필터는 오히려 평면적으로 만든다. 유분 부위만 매트.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>의상은 대비와 수직선</strong>
+            네이비/블랙 칼라는 유효. 단추를 하나 열어 목–턱 라인을 연장. 라운드넥 두꺼운 니트는 하관을 더 둥글게 한다.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>추가 촬영</strong>
+            45°와 측면 무보정 컷이 있어야 콧대·턱끝·하악을 재판정할 수 있다. 현재 종합 7.6은 정면 한정.
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <footer>
+      <div>
+        본 문서는 단일 정면 사진에 대한 시각적 형태 평가이다. 의학적 진단, 계측 장비, 또는 인종 고정관념에 기반한 서열화가 아니다.
+        점수는 10점 상대 척도의 추정값이며, 조명·각·보정에 따라 ±0.5 이상 변동할 수 있다.
+      </div>
+      <div style="text-align:right;white-space:nowrap;">
+        FACIAL BEAUTY REPORT<br />
+        CONFIDENTIAL · FOR SUBJECT USE
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
