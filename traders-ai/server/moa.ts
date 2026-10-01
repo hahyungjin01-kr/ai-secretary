@@ -1,6 +1,11 @@
 import type { ResearchBundle, DevilChallenge } from './types.js';
 import type { ModeProfile } from './modes.js';
-import { runMixtureOfExperts, type ExpertSide, type MoEResult } from './moe.js';
+import {
+  runMixtureOfExperts,
+  type ExpertSide,
+  type ExpertVote,
+  type MoEResult,
+} from './moe.js';
 import { runDevilAdvocate, type DevilResult } from './devilAdvocate.js';
 
 export interface AgentOpinion {
@@ -10,6 +15,18 @@ export interface AgentOpinion {
   side: ExpertSide;
   score: number;
   note: string;
+}
+
+/** deny/caution 피드백으로 분석 MoA를 다시 돌릴 때 힌트 */
+export interface MoARevisionHints {
+  round: number;
+  reasons: string[];
+  /** 사이징을 더 줄이도록 강제 */
+  forceSizeFactor?: number;
+  /** 악마 비토를 축소 매수로 완화 시도 */
+  softenDevilVeto?: boolean;
+  /** 신뢰도 하한을 낮춰 보수 제안 허용 */
+  relaxConfidenceFloor?: number;
 }
 
 export interface MoADecision {
@@ -29,6 +46,8 @@ export interface MoADecision {
   devilSummary: string;
   moaSummary: string;
   passedGate: boolean;
+  revisionRound?: number;
+  revisionNotes?: string[];
 }
 
 function round(n: number, d = 2): number {
@@ -232,7 +251,13 @@ export function runMixtureOfAgents(
   research: ResearchBundle,
   mode: ModeProfile,
   heldShares: number,
+  hints?: MoARevisionHints,
 ): MoADecision {
+  const revisionRound = hints?.round ?? 0;
+  const revisionNotes = hints?.reasons?.length
+    ? [`재분석 #${revisionRound}: ${hints.reasons.slice(0, 3).join(' / ')}`]
+    : [];
+
   // Layer-0: MoE 전문가 앙상블
   const moe = runMixtureOfExperts(research, mode, heldShares);
 
@@ -298,17 +323,22 @@ export function runMixtureOfAgents(
     thesis: moe.thesis,
   });
 
+  // 재분석 라운드에서는 비토를 즉시 hold로 끝내지 않고, 축소·재설계로 허용안을 만든다
+  const soften = Boolean(hints?.softenDevilVeto && devil.veto && draftSide !== 'hold');
   const critic: AgentOpinion = {
     agentId: 'devil-advocate',
     agentName: '악마의 변호인',
     role: 'critic',
-    side: devil.veto ? 'hold' : draftSide,
-    score: round(Math.max(0, draftScore * (1 - devil.riskPenalty)), 1),
-    note: devil.summary,
+    side: devil.veto && !soften ? 'hold' : draftSide,
+    score: round(Math.max(0, draftScore * (1 - devil.riskPenalty) * (soften ? 0.85 : 1)), 1),
+    note: soften
+      ? `${devil.summary} → 재분석: 거부 대신 축소 허용안 설계`
+      : devil.summary,
   };
 
-  let afterDevilSide: ExpertSide = devil.veto ? 'hold' : draftSide;
+  let afterDevilSide: ExpertSide = devil.veto && !soften ? 'hold' : draftSide;
   let afterDevilScore = critic.score;
+  if (soften) revisionNotes.push('악마 비토를 축소 매수 허용안으로 전환');
 
   // Risk agent
   const risk = riskAgent(
@@ -338,29 +368,51 @@ export function runMixtureOfAgents(
     }
   }
 
-  if (devil.veto) finalSide = 'hold';
+  if (devil.veto && !soften) finalSide = 'hold';
 
-  // mode thresholds
-  if (finalSide === 'buy' && finalScore < mode.minBuyScore) finalSide = 'hold';
-  if (finalSide === 'sell' && finalScore < mode.minSellScore) finalSide = 'hold';
+  // 재분석 시 임계를 소폭 완화해 "허용 가능한 보수안"을 찾는다
+  const buyFloor = revisionRound > 0 ? mode.minBuyScore - 6 : mode.minBuyScore;
+  const sellFloor = revisionRound > 0 ? mode.minSellScore - 4 : mode.minSellScore;
+  if (finalSide === 'buy' && finalScore < buyFloor) finalSide = 'hold';
+  if (finalSide === 'sell' && finalScore < sellFloor) finalSide = 'hold';
   if (finalSide === 'sell' && heldShares <= 0) finalSide = 'hold';
 
+  // soft veto 후 점수가 낮으면 매수로 유지하되 사이즈만 강하게 축소
+  if (soften && finalSide === 'hold' && draftSide === 'buy' && afterDevilScore >= buyFloor - 4) {
+    finalSide = 'buy';
+    finalScore = Math.max(afterDevilScore, buyFloor);
+    revisionNotes.push('집계: hold 대신 축소 매수안 채택');
+  }
+
   const finalLevels = levels(research, finalSide, mode);
-  const sizeFactor = round(
-    Math.max(0.35, 1 - devil.riskPenalty - (moe.agreement < 0.5 ? 0.15 : 0)),
+  let sizeFactor = round(
+    Math.max(0.25, 1 - devil.riskPenalty - (moe.agreement < 0.5 ? 0.15 : 0)),
     2,
   );
+  if (hints?.forceSizeFactor != null) {
+    sizeFactor = round(Math.min(sizeFactor, hints.forceSizeFactor), 2);
+  }
+  if (soften) sizeFactor = round(Math.min(sizeFactor, 0.45), 2);
+  if (revisionRound > 0) {
+    sizeFactor = round(Math.min(sizeFactor, Math.max(0.25, 0.7 - revisionRound * 0.15)), 2);
+  }
 
-  const confidence = round(
+  let confidence = round(
     Math.min(
       0.95,
       Math.max(
         0.15,
-        (moe.agreement * 0.55 + Math.min(finalScore, 100) / 100 * 0.45) * (1 - devil.riskPenalty * 0.5),
+        (moe.agreement * 0.55 + (Math.min(finalScore, 100) / 100) * 0.45) *
+          (1 - devil.riskPenalty * 0.5),
       ),
     ),
     2,
   );
+  if (hints?.relaxConfidenceFloor != null && confidence < hints.relaxConfidenceFloor) {
+    // 재분석 보수안: 신뢰도 바닥을 힌트 수준까지 보정(과신 방지용 상한 유지)
+    confidence = round(Math.min(hints.relaxConfidenceFloor, 0.55), 2);
+    revisionNotes.push(`신뢰도 바닥 보정 → ${(confidence * 100).toFixed(0)}%`);
+  }
 
   const aggregator: AgentOpinion = {
     agentId: 'aggregator',
@@ -368,17 +420,15 @@ export function runMixtureOfAgents(
     role: 'aggregator',
     side: finalSide,
     score: round(finalScore, 1),
-    note: `MoA 최종 ${finalSide} · 신뢰도 ${(confidence * 100).toFixed(0)}% · 사이징×${sizeFactor}`,
+    note: `MoA 최종 ${finalSide} · 신뢰도 ${(confidence * 100).toFixed(0)}% · 사이징×${sizeFactor}${
+      revisionRound ? ` · 재분석#${revisionRound}` : ''
+    }`,
   };
 
   const agentOpinions = [...proposers, critic, risk, aggregator];
   const passedGate = finalSide === 'buy' || finalSide === 'sell';
 
-  const thesisParts = [
-    moe.thesis,
-    devil.summary,
-    aggregator.note,
-  ];
+  const thesisParts = [moe.thesis, critic.note, aggregator.note, ...revisionNotes];
 
   return {
     side: finalSide === 'hold' ? 'hold' : finalSide,
@@ -393,9 +443,68 @@ export function runMixtureOfAgents(
     expertVotes: moe.votes,
     agentOpinions,
     devilAdvocate: devil.challenges,
-    devilSummary: devil.summary,
-    moaSummary: `제안 ${proposers.map((p) => p.side[0]).join('')}` +
-      ` → 악마${devil.veto ? '거부' : '통과'} → 리스크 ${risk.side} → 최종 ${finalSide}`,
+    devilSummary: soften ? `${devil.summary} (재분석으로 축소 허용 시도)` : devil.summary,
+    moaSummary:
+      `제안 ${proposers.map((p) => p.side[0]).join('')}` +
+      ` → 악마${devil.veto ? (soften ? '완화' : '거부') : '통과'} → 리스크 ${risk.side} → 최종 ${finalSide}` +
+      (revisionRound ? ` · 재분석#${revisionRound}` : ''),
     passedGate,
+    revisionRound,
+    revisionNotes,
   };
+}
+
+export interface AnalysisAllowResult {
+  decision: MoADecision;
+  rounds: number;
+  history: string[];
+}
+
+/**
+ * deny/실패 시 중단하지 않고, 피드백을 넣어 분석 MoA를 최대 maxRounds회 재실행해
+ * 허용 가능한 안(passedGate)을 찾는다.
+ */
+export function runAnalysisUntilAllowable(
+  research: ResearchBundle,
+  mode: ModeProfile,
+  heldShares: number,
+  maxRounds = 3,
+): AnalysisAllowResult {
+  const history: string[] = [];
+  let hints: MoARevisionHints | undefined;
+  let last = runMixtureOfAgents(research, mode, heldShares);
+
+  for (let round = 0; round < maxRounds; round++) {
+    if (last.passedGate && last.side !== 'hold') {
+      history.push(`round ${round}: 허용안 확보 (${last.moaSummary})`);
+      return { decision: last, rounds: round + 1, history };
+    }
+
+    const reasons: string[] = [];
+    if (!last.passedGate || last.side === 'hold') {
+      reasons.push('집계 결과가 hold/미통과');
+    }
+    if (last.devilSummary.includes('거부')) reasons.push(last.devilSummary);
+    if (last.confidence < 0.35) reasons.push(`신뢰도 낮음 ${(last.confidence * 100).toFixed(0)}%`);
+    if (last.sizeFactor < 0.4) reasons.push(`사이징 과소 ×${last.sizeFactor}`);
+    for (const n of last.revisionNotes ?? []) reasons.push(n);
+
+    history.push(`round ${round}: 미허용 → 재분석 예약 (${reasons.slice(0, 2).join(' / ')})`);
+
+    hints = {
+      round: round + 1,
+      reasons,
+      forceSizeFactor: Math.max(0.25, 0.55 - round * 0.12),
+      softenDevilVeto: true,
+      relaxConfidenceFloor: 0.38 + round * 0.04,
+    };
+    last = runMixtureOfAgents(research, mode, heldShares, hints);
+  }
+
+  if (last.passedGate && last.side !== 'hold') {
+    history.push(`final: 허용안 확보 (${last.moaSummary})`);
+  } else {
+    history.push(`final: ${maxRounds}회 재분석 후에도 허용안 없음`);
+  }
+  return { decision: last, rounds: maxRounds, history };
 }

@@ -1,6 +1,6 @@
 import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
-import { runMixtureOfAgents } from './moa.js';
+import { runAnalysisUntilAllowable } from './moa.js';
 import { buildAutonomousUniverse, buildPlaybook } from './universe.js';
 import {
   loadState,
@@ -101,19 +101,27 @@ export async function runDailyAnalysis(force = false): Promise<{
       const held = state.positions.find((p) => p.symbol === research.symbol);
       const heldShares = held?.shares ?? 0;
 
-      // MoE → MoA proposers → 악마의 변호인 → 리스크 → 집계
-      const decision = runMixtureOfAgents(research, mode, heldShares);
+      // deny/미통과 시 중단하지 않고 분석 MoA를 재실행해 허용안을 찾음
+      const { decision, rounds, history } = runAnalysisUntilAllowable(
+        research,
+        mode,
+        heldShares,
+        3,
+      );
       if (!decision.passedGate || decision.side === 'hold') {
         console.log(
           '[daily/moa-skip]',
           research.symbol,
           decision.moaSummary,
-          `conf=${decision.confidence}`,
+          `rounds=${rounds}`,
+          history[history.length - 1],
         );
         continue;
       }
 
       const ex = expertSummary(decision.expertVotes);
+      const reviseTag =
+        rounds > 1 ? ` · 재분석 ${rounds}회 후 허용` : '';
 
       if (decision.side === 'buy') {
         if (buyCount >= mode.maxDailyBuyAlerts) continue;
@@ -125,8 +133,7 @@ export async function runDailyAnalysis(force = false): Promise<{
         );
         if (max < decision.entry || suggested < decision.entry) continue;
 
-        // 신뢰도 너무 낮으면 제안 자체를 막음
-        if (decision.confidence < 0.35) continue;
+        if (decision.confidence < 0.32) continue;
 
         const playbook = buildPlaybook({
           side: 'buy',
@@ -157,12 +164,12 @@ export async function runDailyAnalysis(force = false): Promise<{
           mode: state.mode,
           status: 'pending',
           strategy: playbook.strategy,
-          howToInvest: `${playbook.howToInvest} (MoA 신뢰도 ${(decision.confidence * 100).toFixed(0)}%)`,
+          howToInvest: `${playbook.howToInvest} (MoA 신뢰도 ${(decision.confidence * 100).toFixed(0)}%${reviseTag})`,
           horizon: playbook.horizon,
           selectedBy: 'ai',
           selectionSource: cand.source,
           expertSummary: ex,
-          moaSummary: decision.moaSummary,
+          moaSummary: `${decision.moaSummary}${reviseTag}`,
           devilSummary: decision.devilSummary,
           confidence: decision.confidence,
           devilChallenges: decision.devilAdvocate.map((c) => ({
@@ -215,12 +222,12 @@ export async function runDailyAnalysis(force = false): Promise<{
           mode: state.mode,
           status: 'pending',
           strategy: playbook.strategy,
-          howToInvest: playbook.howToInvest,
+          howToInvest: `${playbook.howToInvest}${reviseTag}`,
           horizon: playbook.horizon,
           selectedBy: 'ai',
           selectionSource: cand.source,
           expertSummary: ex,
-          moaSummary: decision.moaSummary,
+          moaSummary: `${decision.moaSummary}${reviseTag}`,
           devilSummary: decision.devilSummary,
           confidence: decision.confidence,
           devilChallenges: decision.devilAdvocate.map((c) => ({

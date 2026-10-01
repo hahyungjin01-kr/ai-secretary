@@ -2,6 +2,7 @@ import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
 import { getBroker, BrokerError, fetchBrokerStatus } from './broker/index.js';
 import { runPretradeMoA } from './pretrade.js';
+import { runMixtureOfAgents, type MoARevisionHints } from './moa.js';
 import { checkApproveConfirm } from './security.js';
 import {
   loadState,
@@ -196,18 +197,81 @@ export async function actOnAlert(
     buyingPower = state.cash;
   }
 
-  const gate = runPretradeMoA({
+  const mode = MODE_PROFILES[state.mode];
+  const heldShares =
+    state.positions.find((p) => p.symbol === alert.symbol)?.shares ?? 0;
+
+  let gate = runPretradeMoA({
     alert: { ...alert, entry: proposedEntry },
     research,
-    mode: MODE_PROFILES[state.mode],
+    mode,
     cash: state.cash,
     buyingPower,
   });
 
+  // soft-deny면 중단하지 않고 분석 MoA를 다시 돌려 허용안을 만든다
+  const reviseLog: string[] = [];
+  for (let round = 0; !gate.allow && gate.revisable && round < 3; round++) {
+    const hints: MoARevisionHints = {
+      round: round + 1,
+      reasons: gate.reviseReasons.length ? gate.reviseReasons : gate.blockReasons,
+      forceSizeFactor: Math.max(0.25, gate.sizeFactor * 0.75),
+      softenDevilVeto: true,
+      relaxConfidenceFloor: 0.4,
+    };
+    const revised = runMixtureOfAgents(research, mode, heldShares, hints);
+    reviseLog.push(
+      `재분석#${round + 1}: ${revised.moaSummary} ← ${gate.reviseReasons.slice(0, 1).join('')}`,
+    );
+
+    if (!revised.passedGate || revised.side === 'hold') {
+      // 같은 사이드 유지하며 금액만 축소 재시도
+      alert.suggestedAmount = round(alert.suggestedAmount * Math.max(0.35, hints.forceSizeFactor ?? 0.5));
+      alert.confidence = Math.max(alert.confidence ?? 0, hints.relaxConfidenceFloor ?? 0.4);
+      alert.moaSummary = `${alert.moaSummary ?? ''} · ${reviseLog[reviseLog.length - 1]}`;
+    } else {
+      alert.side = revised.side;
+      alert.score = revised.score;
+      alert.entry = revised.entry;
+      alert.target = revised.target;
+      alert.stop = revised.stop;
+      alert.confidence = revised.confidence;
+      alert.thesis = `${alert.thesis} · ${revised.thesis}`;
+      alert.devilSummary = revised.devilSummary;
+      alert.devilChallenges = revised.devilAdvocate.map((c) => ({
+        id: c.id,
+        claim: c.claim,
+        counter: c.counter,
+        severity: c.severity,
+      }));
+      alert.moaSummary = revised.moaSummary;
+      alert.suggestedAmount = round(
+        Math.min(alert.maxAmount, alert.suggestedAmount) * revised.sizeFactor,
+      );
+      alert.howToInvest = `재분석 허용안 ×${revised.sizeFactor}: ${revised.moaSummary}`;
+    }
+
+    gate = runPretradeMoA({
+      alert: { ...alert, entry: alert.entry },
+      research,
+      mode,
+      cash: state.cash,
+      buyingPower,
+    });
+  }
+
   if (!gate.allow) {
-    alert.executionNote = gate.summary;
+    // hard deny이거나 재분석으로도 못 푼 경우만 중단
+    const note = reviseLog.length
+      ? `${gate.summary} (재분석 ${reviseLog.length}회 시도)`
+      : gate.summary;
+    alert.executionNote = note;
     saveState(state);
-    throw new ExecuteError(gate.summary);
+    throw new ExecuteError(note);
+  }
+
+  if (reviseLog.length) {
+    alert.executionNote = `재분석 후 허용: ${reviseLog.join(' | ')}`;
   }
 
   const requested = Number.isFinite(amount) && amount > 0 ? amount : alert.suggestedAmount;
