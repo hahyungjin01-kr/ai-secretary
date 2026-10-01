@@ -23,10 +23,10 @@ function scheduleEnabled(): boolean {
   return v !== '0' && v !== 'false' && v !== 'off';
 }
 
-/** HH:MM in KST, default 08:55 (장 시작 직전) */
+/** HH:MM in KST, default 17:30 */
 export function scheduleTimeKst(): string {
-  const raw = (process.env.DAILY_RUN_TIME_KST || '08:55').trim();
-  return /^\d{1,2}:\d{2}$/.test(raw) ? raw.padStart(5, '0') : '08:55';
+  const raw = (process.env.DAILY_RUN_TIME_KST || '17:30').trim();
+  return /^\d{1,2}:\d{2}$/.test(raw) ? raw.padStart(5, '0') : '17:30';
 }
 
 function weekdaysOnly(): boolean {

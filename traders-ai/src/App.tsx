@@ -390,7 +390,7 @@ export default function App() {
 
           {pending.length === 0 ? (
             <p className="empty">
-              대기 중인 주문이 없습니다. 평일 {dash.schedule?.timeKst ?? '08:55'} KST에 자동으로
+              대기 중인 주문이 없습니다. 평일 {dash.schedule?.timeKst ?? '17:30'} KST에 자동으로
               분석됩니다.
             </p>
           ) : (
