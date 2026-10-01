@@ -56,6 +56,15 @@ export interface DailyAlert {
   horizon?: string;
   selectedBy?: 'ai' | 'user';
   selectionSource?: string;
+  /** MoE 전문가 요약 */
+  expertSummary?: string;
+  /** MoA 파이프라인 요약 */
+  moaSummary?: string;
+  /** 악마의 변호인 요약 */
+  devilSummary?: string;
+  /** 0–1 신뢰도 */
+  confidence?: number;
+  devilChallenges?: { id: string; claim: string; counter: string; severity: string }[];
   researchSummary: {
     price: number;
     changePercent: number | null;

@@ -94,7 +94,7 @@ app.get('/api/health', async (_req, res) => {
   res.json({
     ok: true,
     service: 'traders-ai',
-    model: 'mode-daily-toss-execution',
+    model: 'moe-moa-devil-toss',
     broker: {
       configured: broker.configured,
       connected: broker.connected,

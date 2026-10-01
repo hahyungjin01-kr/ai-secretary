@@ -47,6 +47,11 @@ export interface DailyAlert {
   horizon?: string;
   selectedBy?: 'ai' | 'user';
   selectionSource?: string;
+  expertSummary?: string;
+  moaSummary?: string;
+  devilSummary?: string;
+  confidence?: number;
+  devilChallenges?: { id: string; claim: string; counter: string; severity: string }[];
   researchSummary: {
     price: number;
     changePercent: number | null;

@@ -68,7 +68,40 @@ function ApprovalCard({
           <dt>손절</dt>
           <dd>{money(alert.stop, alert.currency)}</dd>
         </div>
+        <div>
+          <dt>신뢰도</dt>
+          <dd>{alert.confidence != null ? `${Math.round(alert.confidence * 100)}%` : '—'}</dd>
+        </div>
       </dl>
+
+      {(alert.moaSummary || alert.expertSummary || alert.devilSummary) && (
+        <div className="pipeline">
+          {alert.moaSummary && (
+            <p>
+              <strong>MoA</strong> {alert.moaSummary}
+            </p>
+          )}
+          {alert.expertSummary && (
+            <p>
+              <strong>MoE</strong> {alert.expertSummary}
+            </p>
+          )}
+          {alert.devilSummary && (
+            <p>
+              <strong>악마의 변호인</strong> {alert.devilSummary}
+            </p>
+          )}
+          {(alert.devilChallenges?.length ?? 0) > 0 && (
+            <ul className="devil-list">
+              {alert.devilChallenges!.slice(0, 3).map((c) => (
+                <li key={c.id}>
+                  <span className={`sev ${c.severity}`}>{c.severity}</span> {c.counter}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <footer>
         <button
@@ -228,8 +261,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>알아서 투자합니다</h1>
             <p>
-              증권계좌 현금으로 AI가 종목을 고릅니다. 매수하기 직전에만 「허락」을 받으면
-              됩니다.
+              MoE(전문가 혼합) → MoA(에이전트 혼합) → 악마의 변호인 점검 후, 통과한 종목만
+              제안합니다. 매수 직전에 「허락」만 하세요.
             </p>
           </div>
 
