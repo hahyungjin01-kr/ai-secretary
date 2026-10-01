@@ -490,8 +490,8 @@ export default function App() {
           ) : (
             <>
               <p className="hint">
-                빼고 싶은 종목만 「이 종목만 빼기」한 뒤, 위 <strong>최종 확인</strong>을 한 번
-                누르면 됩니다.
+                매도 제안이 있으면 당일은 매도만 합니다. 매수는 현금 한도 안·매도 다음날입니다.
+                빼고 싶은 종목만 「이 종목만 빼기」한 뒤 <strong>최종 확인</strong>을 누르세요.
               </p>
               <div className="alert-list">
                 {pending.map((a) => (

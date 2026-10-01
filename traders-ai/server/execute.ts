@@ -45,16 +45,21 @@ function clampAmount(
   if (alert.side === 'buy') {
     const marks = Object.fromEntries(state.positions.map((p) => [p.symbol, p.avgPrice]));
     const equity = portfolioValue(state, marks);
-    const maxByMode = (equity * mode.maxPositionPct) / 100;
-    const minCashReserve = (equity * mode.minCashPct) / 100;
+    // 포지션 한도·예비금은 현금 우선 (총자산 기준 오버매수 방지)
+    const cashBase = Math.max(state.cash, 1);
+    const maxByMode = Math.min(
+      (cashBase * mode.maxPositionPct) / 100,
+      (equity * mode.maxPositionPct) / 100,
+    );
+    const minCashReserve = Math.min((equity * mode.minCashPct) / 100, state.cash * 0.35);
     const spendable = Math.max(0, state.cash - minCashReserve);
     const capped = round(
-      Math.min(amount, alert.maxAmount, maxByMode, spendable) * sizeFactor,
+      Math.min(amount, alert.maxAmount, maxByMode, spendable, state.cash) * sizeFactor,
     );
     const minPx = alert.researchSummary?.price || alert.entry;
     if (minPx > 0 && capped < minPx) {
       throw new ExecuteError(
-        `모드(${mode.label}) 한도/현금 부족으로 매수할 수 없습니다. 최대 약 ${round(capped)}`,
+        `모드(${mode.label}) 한도/현금 부족으로 매수할 수 없습니다. 가용현금 약 ${round(spendable)}`,
       );
     }
     return capped;

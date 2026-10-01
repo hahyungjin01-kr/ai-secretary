@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODE_PROFILES, isTraderMode } from './modes.js';
 import { loadState, saveState, portfolioValue, type AppState } from './store.js';
-import { runDailyAnalysis } from './daily.js';
+import { reconcilePendingAlerts, runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
@@ -39,6 +39,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
+  reconcilePendingAlerts(state);
   const broker = await fetchBrokerStatus(false);
   const equity = portfolioValue(state, marks);
   const risk = evaluateRisk(state, marks);
@@ -312,7 +313,15 @@ app.post('/api/alerts/confirm-all', async (req, res) => {
   try {
     const confirm = String(req.body?.confirm ?? APPROVE_PHRASE);
     const state0 = loadState();
-    const pending = state0.alerts.filter((a) => a.status === 'pending');
+    reconcilePendingAlerts(state0);
+    saveState(state0);
+    const pending = state0.alerts
+      .filter((a) => a.status === 'pending')
+      // 매도 먼저 → 현금 확보 후 매수 (같은 확인에서도 오버매수 방지)
+      .sort((a, b) => {
+        if (a.side !== b.side) return a.side === 'sell' ? -1 : 1;
+        return 0;
+      });
     if (pending.length === 0) {
       const marks = await markPrices(state0);
       res.json({
