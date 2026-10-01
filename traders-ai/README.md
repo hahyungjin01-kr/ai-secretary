@@ -48,6 +48,18 @@ npm run dev
 - Web: http://localhost:5173
 - API: http://localhost:8787
 
+### 모바일(데이터)에서 접속
+
+도메인 없이 공개 URL로 열 때:
+
+```bash
+npm run start:public
+# 다른 터미널
+npx localtunnel --port 8787
+```
+
+나온 `https://....loca.lt` 주소를 폰 브라우저에 입력하면 됩니다.
+
 ## API
 
 - `GET /api/dashboard`

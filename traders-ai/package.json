@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c teal,blue \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:web": "vite",
+    "dev:web": "vite --host 0.0.0.0 --port 5173",
     "dev:api": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
+    "start:public": "npm run build && HOST=0.0.0.0 PORT=8787 tsx server/index.ts",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "cors": "^2.8.6",
