@@ -18,6 +18,7 @@ import {
   type DailyAlert,
   type TradeRecord,
 } from './store.js';
+import { withIpRetry } from './egress.js';
 
 function round(n: number, d = 2): number {
   const p = 10 ** d;
@@ -124,28 +125,30 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
   const broker = getBroker(false);
   if (!broker) return state;
 
-  const account = await broker.getAccount();
-  await new Promise((r) => setTimeout(r, 1200));
-  const positions = await broker.getPositions();
+  return withIpRetry('broker-sync', async () => {
+    const account = await broker.getAccount();
+    await new Promise((r) => setTimeout(r, 1200));
+    const positions = await broker.getPositions();
 
-  state.cash = round(account.cash);
-  state.currency = account.currency || state.currency;
-  if (!state.startingCash || state.currency !== account.currency) {
-    state.startingCash = round(account.equity);
-  }
+    state.cash = round(account.cash);
+    state.currency = account.currency || state.currency;
+    if (!state.startingCash || state.currency !== account.currency) {
+      state.startingCash = round(account.equity);
+    }
 
-  const now = new Date().toISOString();
-  state.positions = positions.map((p) => ({
-    symbol: p.symbol,
-    name: p.name || p.symbol,
-    shares: p.qty,
-    avgPrice: p.avgEntryPrice,
-    currency: p.currency || account.currency || 'KRW',
-    updatedAt: now,
-  }));
+    const now = new Date().toISOString();
+    state.positions = positions.map((p) => ({
+      symbol: p.symbol,
+      name: p.name || p.symbol,
+      shares: p.qty,
+      avgPrice: p.avgEntryPrice,
+      currency: p.currency || account.currency || 'KRW',
+      updatedAt: now,
+    }));
 
-  saveState(state);
-  return state;
+    saveState(state);
+    return state;
+  });
 }
 
 /**
@@ -157,6 +160,7 @@ export async function actOnAlert(
   amount: number,
   action: 'execute' | 'skip' = 'execute',
   confirm = '',
+  opts: { skipSync?: boolean } = {},
 ): Promise<{ state: AppState; alert: DailyAlert; trade?: TradeRecord }> {
   let state = loadState();
   const alert = state.alerts.find((a) => a.id === alertId);
@@ -178,13 +182,15 @@ export async function actOnAlert(
   const conf = checkApproveConfirm(confirm);
   if (!conf.ok) throw new ExecuteError(conf.error);
 
-  try {
-    state = await syncFromBroker(state);
-  } catch (err) {
-    if (state.preferBroker && getBroker(false)) {
-      throw new ExecuteError(
-        `브로커 동기화 실패: ${err instanceof Error ? err.message : 'unknown'}`,
-      );
+  if (!opts.skipSync) {
+    try {
+      state = await syncFromBroker(state);
+    } catch (err) {
+      if (state.preferBroker && getBroker(false)) {
+        throw new ExecuteError(
+          `브로커 동기화 실패: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+      }
     }
   }
 

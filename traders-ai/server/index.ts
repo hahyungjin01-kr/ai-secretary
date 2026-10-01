@@ -7,6 +7,7 @@ import { MODE_PROFILES, isTraderMode } from './modes.js';
 import { loadState, saveState, portfolioValue, type AppState } from './store.js';
 import { reconcilePendingAlerts, runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
+import { sampleEgressIps } from './egress.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
 import { APPROVE_PHRASE } from './security.js';
@@ -147,6 +148,21 @@ app.get('/api/dashboard', async (_req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : '대시보드 오류';
     res.status(500).json({ error: message });
+  }
+});
+
+app.get('/api/broker/egress', async (_req, res) => {
+  try {
+    const ips = await sampleEgressIps(10);
+    res.json({
+      ips,
+      hint:
+        ips.length > 0
+          ? `토스증권 Open API → 허용 IP에 아래 주소를 모두 등록하세요: ${ips.join(', ')}`
+          : '출구 IP를 확인하지 못했습니다. 잠시 후 다시 시도하세요.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'egress probe failed' });
   }
 });
 
@@ -333,13 +349,31 @@ app.post('/api/alerts/confirm-all', async (req, res) => {
       return;
     }
 
+    // 종목마다 sync 하면 IP 거부로 연쇄 실패 → 한 번만 동기화
+    let lastState = state0;
+    try {
+      lastState = await syncFromBroker(state0);
+    } catch (err) {
+      const marks = await markPrices(state0);
+      res.status(400).json({
+        ...(await publicState(state0, marks)),
+        confirmedCount: 0,
+        failed: pending.map((a) => ({
+          id: a.id,
+          symbol: a.symbol,
+          error: err instanceof Error ? err.message : '브로커 동기화 실패',
+        })),
+        error: err instanceof Error ? err.message : '브로커 동기화 실패',
+      });
+      return;
+    }
+
     const failed: { id: string; symbol: string; error: string }[] = [];
     let confirmedCount = 0;
-    let lastState = state0;
 
     for (const alert of pending) {
       try {
-        const result = await actOnAlert(alert.id, 0, 'execute', confirm);
+        const result = await actOnAlert(alert.id, 0, 'execute', confirm, { skipSync: true });
         lastState = result.state;
         confirmedCount += 1;
       } catch (err) {

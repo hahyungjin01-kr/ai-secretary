@@ -68,6 +68,13 @@ function isInvalidTokenError(status: number, message: string): boolean {
   );
 }
 
+function isIpDenied(status: number, message: string): boolean {
+  if (status === 403) return true;
+  return /허용되지 않은\s*IP|ip address not allowed|access_denied|not allowed.*ip/i.test(
+    message,
+  );
+}
+
 /** 프로세스 전역 토큰 — 인스턴스마다 새로 발급하면 이전 토큰이 즉시 무효화됨 */
 const sharedToken: {
   access: string | null;
@@ -163,9 +170,7 @@ export class TossBroker implements BrokerClient {
           `HTTP ${res.status}`,
       );
       lastErr = desc;
-      const ipDenied =
-        res.status === 403 || /ip address not allowed/i.test(desc) || /access_denied/i.test(desc);
-      if (!ipDenied || attempt === 6) break;
+      if (!isIpDenied(res.status, desc) || attempt === 6) break;
       await new Promise((r) => setTimeout(r, 250 * attempt));
     }
     throw new BrokerError(`토스 토큰 발급 실패: ${lastErr}`);
@@ -191,8 +196,9 @@ export class TossBroker implements BrokerClient {
 
     let lastErr = `토스 API 오류`;
     let refreshed = false;
+    const maxAttempts = 10;
 
-    for (let attempt = 1; attempt <= 4; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const headers = buildHeaders(token);
       if (opts.account) {
         headers['X-Tossinvest-Account'] = String(await this.resolveAccountSeq());
@@ -213,9 +219,17 @@ export class TossBroker implements BrokerClient {
         continue;
       }
 
+      // 출구 IP 회전 환경: 허용 IP가 아니면 경로가 바뀔 때까지 재시도
+      if (isIpDenied(res.status, lastErr) && attempt < maxAttempts) {
+        this.clearToken();
+        await new Promise((r) => setTimeout(r, 200 * attempt));
+        token = await this.getAccessToken(true);
+        continue;
+      }
+
       const retryable =
         res.status === 429 || /한도|rate|too many|요청 한도/i.test(lastErr);
-      if (!retryable || attempt === 4) break;
+      if (!retryable || attempt === maxAttempts) break;
       const waitMs = Number(res.headers.get('retry-after') || 0) * 1000 || 1200 * attempt;
       await new Promise((r) => setTimeout(r, waitMs));
     }

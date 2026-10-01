@@ -22,6 +22,10 @@ NOTIFY_SCHEDULE_ENABLED=1
 NOTIFY_TIME_KST=18:00
 ```
 
+## 토스 「허용되지 않은 IP」
+Cloud Agent 서버 출구 IP는 여러 개로 회전합니다.  
+앱의 **등록할 출구 IP 보기**로 나온 주소를 **전부** 토스증권 Open API 허용 IP에 등록하세요.
+
 ## 안전장치
 - 일손실 킬스위치 / 연속 손실 시 매수 잠금
 - 장외는 하드 차단

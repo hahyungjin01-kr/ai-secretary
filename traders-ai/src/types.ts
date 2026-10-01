@@ -289,6 +289,10 @@ export async function syncBroker(): Promise<Dashboard> {
   );
 }
 
+export async function fetchEgressIps(): Promise<{ ips: string[]; hint: string }> {
+  return parse(await apiFetch('/api/broker/egress', { headers: apiHeaders(false) }));
+}
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');

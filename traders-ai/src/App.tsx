@@ -4,6 +4,7 @@ import {
   confirmAllPending,
   enablePhoneNotify,
   fetchDashboard,
+  fetchEgressIps,
   getPushStatus,
   sendTestNotify,
   syncBroker,
@@ -128,6 +129,8 @@ export default function App() {
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [pushOn, setPushOn] = useState(false);
   const [highlightConfirm, setHighlightConfirm] = useState(false);
+  const [egressIps, setEgressIps] = useState<string[]>([]);
+  const [egressHint, setEgressHint] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
@@ -243,7 +246,32 @@ export default function App() {
       setDash(data);
       setNotice(data.broker.message);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '동기화 실패');
+      const msg = e instanceof Error ? e.message : '동기화 실패';
+      setError(msg);
+      if (/IP|허용/i.test(msg)) {
+        try {
+          const eg = await fetchEgressIps();
+          setEgressIps(eg.ips);
+          setEgressHint(eg.hint);
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      setBrokerBusy(false);
+    }
+  }
+
+  async function onShowEgressIps() {
+    setBrokerBusy(true);
+    setError(null);
+    try {
+      const eg = await fetchEgressIps();
+      setEgressIps(eg.ips);
+      setEgressHint(eg.hint);
+      setNotice(eg.hint);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '출구 IP 조회 실패');
     } finally {
       setBrokerBusy(false);
     }
@@ -406,18 +434,37 @@ export default function App() {
           </label>
         </section>
 
-        {!dash.broker.configured && (
+        {(!dash.broker.configured || !connected || egressIps.length > 0) && (
           <section className="panel">
-            <h2>토스 계좌 연결 (1회)</h2>
-            <ol className="setup-steps">
-              <li>
-                토스증권 → Open API에서 <code>client_id</code> / <code>client_secret</code> 발급
-              </li>
-              <li>허용 IP 등록</li>
-              <li>
-                <code>traders-ai/.env</code>에 키 저장 후 서버 재시작
-              </li>
-            </ol>
+            <h2>토스 계좌 · 허용 IP</h2>
+            {!dash.broker.configured ? (
+              <ol className="setup-steps">
+                <li>
+                  토스증권 → Open API에서 <code>client_id</code> / <code>client_secret</code> 발급
+                </li>
+                <li>허용 IP 등록 (아래 출구 IP 전부)</li>
+                <li>
+                  <code>traders-ai/.env</code>에 키 저장 후 서버 재시작
+                </li>
+              </ol>
+            ) : (
+              <p className="hint">
+                {dash.broker.error
+                  ? `연결 오류: ${dash.broker.error}`
+                  : '서버 출구 IP가 여러 개라, 토스 허용 IP에 전부 등록해야 주문이 됩니다.'}
+              </p>
+            )}
+            <div className="hero-actions">
+              <button type="button" className="ghost" disabled={brokerBusy} onClick={onShowEgressIps}>
+                {brokerBusy ? '조회 중…' : '등록할 출구 IP 보기'}
+              </button>
+            </div>
+            {egressIps.length > 0 && (
+              <p className="hint">
+                <strong>허용 IP에 등록:</strong> <code>{egressIps.join(', ')}</code>
+                {egressHint ? ` — ${egressHint}` : ''}
+              </p>
+            )}
           </section>
         )}
 
