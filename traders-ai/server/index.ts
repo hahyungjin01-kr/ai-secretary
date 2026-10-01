@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import express, { type NextFunction, type Request, type Response } from 'express';
+import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ import { runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
-import { APPROVE_PHRASE, accessTokenConfigured, checkAccessToken } from './security.js';
+import { APPROVE_PHRASE } from './security.js';
 import {
   evaluateRisk,
   persistRiskFlags,
@@ -27,16 +27,6 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-
-/** 변경 API 보호 (TRADERS_AI_TOKEN 설정 시) */
-function requireAccessToken(req: Request, res: Response, next: NextFunction) {
-  const check = checkAccessToken(req.header('x-traders-token'));
-  if (!check.ok) {
-    res.status(401).json({ error: check.error });
-    return;
-  }
-  next();
-}
 
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
   const broker = await fetchBrokerStatus(false);
@@ -79,7 +69,6 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     positions: positionMarks,
     alerts: state.alerts,
     pendingAlerts: state.alerts.filter((a) => a.status === 'pending' || a.status === 'executing'),
-    accessTokenRequired: accessTokenConfigured(),
     approvePhrase: APPROVE_PHRASE,
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
@@ -164,7 +153,7 @@ app.get('/api/broker/status', async (_req, res) => {
   }
 });
 
-app.post('/api/broker/sync', requireAccessToken, async (_req, res) => {
+app.post('/api/broker/sync', async (_req, res) => {
   try {
     const state = await syncFromBroker(loadState());
     const marks = await markPrices(state);
@@ -174,7 +163,7 @@ app.post('/api/broker/sync', requireAccessToken, async (_req, res) => {
   }
 });
 
-app.post('/api/broker/live', requireAccessToken, async (req, res) => {
+app.post('/api/broker/live', async (req, res) => {
   try {
     const state = loadState();
     const arm = Boolean(req.body?.arm);
@@ -210,7 +199,7 @@ app.post('/api/broker/live', requireAccessToken, async (req, res) => {
   }
 });
 
-app.patch('/api/settings', requireAccessToken, async (req, res) => {
+app.patch('/api/settings', async (req, res) => {
   try {
     const state = loadState();
     if (req.body?.mode !== undefined) {
@@ -261,7 +250,7 @@ app.patch('/api/settings', requireAccessToken, async (req, res) => {
   }
 });
 
-app.post('/api/daily/run', requireAccessToken, async (req, res) => {
+app.post('/api/daily/run', async (req, res) => {
   try {
     const force = Boolean(req.body?.force);
     try {
@@ -287,7 +276,7 @@ app.post('/api/daily/run', requireAccessToken, async (req, res) => {
 });
 
 /** 대기 중인 제안을 최종 확인 한 번에 순차 실행 */
-app.post('/api/risk/unlock-live', requireAccessToken, async (req, res) => {
+app.post('/api/risk/unlock-live', async (req, res) => {
   try {
     let state = loadState();
     state = unlockLiveTrading(state, String(req.body?.confirm ?? ''));
@@ -298,7 +287,7 @@ app.post('/api/risk/unlock-live', requireAccessToken, async (req, res) => {
   }
 });
 
-app.post('/api/risk/lock-live', requireAccessToken, async (_req, res) => {
+app.post('/api/risk/lock-live', async (_req, res) => {
   try {
     const state = lockLiveTrading(loadState());
     const marks = await markPrices(state);
@@ -308,7 +297,7 @@ app.post('/api/risk/lock-live', requireAccessToken, async (_req, res) => {
   }
 });
 
-app.post('/api/alerts/confirm-all', requireAccessToken, async (req, res) => {
+app.post('/api/alerts/confirm-all', async (req, res) => {
   try {
     const confirm = String(req.body?.confirm ?? APPROVE_PHRASE);
     const state0 = loadState();
@@ -360,7 +349,7 @@ app.post('/api/alerts/confirm-all', requireAccessToken, async (req, res) => {
   }
 });
 
-app.post('/api/alerts/:id/act', requireAccessToken, async (req, res) => {
+app.post('/api/alerts/:id/act', async (req, res) => {
   try {
     const action = req.body?.action === 'skip' ? 'skip' : 'execute';
     const amount =
@@ -419,11 +408,6 @@ app.listen(PORT, HOST, () => {
     setup.configured
       ? `Broker: Toss Securities @ ${setup.baseUrl}`
       : 'Broker: not configured (local paper). Set TOSS_CLIENT_ID/TOSS_CLIENT_SECRET in .env',
-  );
-  console.log(
-    accessTokenConfigured()
-      ? 'API guard: TRADERS_AI_TOKEN required on mutating routes'
-      : 'API guard: TRADERS_AI_TOKEN not set (open mutating routes — set token for public URL)',
   );
   startDailyScheduler();
 });

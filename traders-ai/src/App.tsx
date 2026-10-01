@@ -3,8 +3,6 @@ import {
   actOnAlert,
   confirmAllPending,
   fetchDashboard,
-  getAccessToken,
-  setAccessToken,
   syncBroker,
   updateSettings,
   type DailyAlert,
@@ -124,7 +122,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [brokerBusy, setBrokerBusy] = useState(false);
-  const [tokenInput, setTokenInput] = useState(() => getAccessToken());
 
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
@@ -317,31 +314,6 @@ export default function App() {
             </select>
           </label>
         </section>
-
-        {dash.accessTokenRequired && (
-          <section className="panel">
-            <h2>접속 토큰</h2>
-            <p className="hint">공개 URL 보호용. .env의 TRADERS_AI_TOKEN 과 같아야 합니다.</p>
-            <div className="hero-actions">
-              <input
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="TRADERS_AI_TOKEN"
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => {
-                  setAccessToken(tokenInput.trim());
-                  setNotice('토큰을 저장했습니다.');
-                }}
-              >
-                토큰 저장
-              </button>
-            </div>
-          </section>
-        )}
 
         {!dash.broker.configured && (
           <section className="panel">
