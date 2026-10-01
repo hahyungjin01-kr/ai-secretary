@@ -58,6 +58,9 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
     lastDailyRunDate: state.lastDailyRunDate,
+    lastUniverseSummary: state.lastUniverseSummary,
+    lastUniverseSymbols: state.lastUniverseSymbols,
+    lastUniverseAt: state.lastUniverseAt,
     preferBroker: state.preferBroker,
     liveTradingArmed: state.liveTradingArmed,
     liveArmedAt: state.liveArmedAt,
@@ -247,6 +250,7 @@ app.post('/api/daily/run', async (req, res) => {
       ...(await publicState(result.state, marks)),
       createdCount: result.created.length,
       scanned: result.scanned,
+      universeSummary: result.universeSummary,
       skippedReason: result.skippedReason,
       created: result.created,
     });

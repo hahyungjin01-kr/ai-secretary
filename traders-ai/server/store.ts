@@ -51,6 +51,11 @@ export interface DailyAlert {
   currency: string;
   mode: TraderMode;
   status: AlertStatus;
+  strategy?: string;
+  howToInvest?: string;
+  horizon?: string;
+  selectedBy?: 'ai' | 'user';
+  selectionSource?: string;
   researchSummary: {
     price: number;
     changePercent: number | null;
@@ -65,6 +70,7 @@ export interface DailyAlert {
 
 export interface AppState {
   mode: TraderMode;
+  /** AI가 마지막으로 스캔한 유니버스 스냅샷 */
   watchlist: string[];
   cash: number;
   startingCash: number;
@@ -74,6 +80,9 @@ export interface AppState {
   trades: TradeRecord[];
   lastDailyRunAt: string | null;
   lastDailyRunDate: string | null;
+  lastUniverseSummary: string | null;
+  lastUniverseSymbols: string[];
+  lastUniverseAt: string | null;
   /** 토스 실주문 잠금 해제. 기본 false */
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
@@ -91,6 +100,9 @@ const DEFAULT_STATE: AppState = {
   trades: [],
   lastDailyRunAt: null,
   lastDailyRunDate: null,
+  lastUniverseSummary: null,
+  lastUniverseSymbols: [],
+  lastUniverseAt: null,
   liveTradingArmed: false,
   liveArmedAt: null,
   preferBroker: true,
@@ -120,6 +132,9 @@ export function loadState(): AppState {
       liveTradingArmed: Boolean(raw.liveTradingArmed),
       liveArmedAt: raw.liveArmedAt ?? null,
       preferBroker: raw.preferBroker !== false,
+      lastUniverseSummary: raw.lastUniverseSummary ?? null,
+      lastUniverseSymbols: raw.lastUniverseSymbols ?? [],
+      lastUniverseAt: raw.lastUniverseAt ?? null,
     };
   } catch {
     return structuredClone(DEFAULT_STATE);

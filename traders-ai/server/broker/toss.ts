@@ -364,6 +364,56 @@ export class TossBroker implements BrokerClient {
     };
   }
 
+  async getRankings(input: {
+    type:
+      | 'MARKET_TRADING_AMOUNT'
+      | 'MARKET_TRADING_VOLUME'
+      | 'TOP_GAINERS'
+      | 'TOP_LOSERS'
+      | 'TOSS_SECURITIES_TRADING_AMOUNT'
+      | 'TOSS_SECURITIES_TRADING_VOLUME';
+    marketCountry: 'KR' | 'US';
+    duration: 'realtime' | '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y';
+    count?: number;
+    excludeInvestmentCaution?: boolean;
+  }): Promise<
+    Array<{
+      rank: number;
+      symbol: string;
+      currency: string;
+      lastPrice: number;
+      changeRate: number | null;
+      tradingAmount: number;
+      tradingVolume: number;
+    }>
+  > {
+    const qs = new URLSearchParams({
+      type: input.type,
+      marketCountry: input.marketCountry,
+      duration: input.duration,
+      count: String(input.count ?? 30),
+      excludeInvestmentCaution: String(input.excludeInvestmentCaution ?? true),
+    });
+    const res = await this.request<{ result?: Record<string, unknown> }>(
+      `/api/v1/rankings?${qs}`,
+      {},
+      { account: false },
+    );
+    const rankings = (asRecord(res.result).rankings as Array<Record<string, unknown>>) ?? [];
+    return rankings.map((r) => {
+      const price = asRecord(r.price);
+      return {
+        rank: num(r.rank),
+        symbol: String(r.symbol ?? '').toUpperCase(),
+        currency: String(r.currency ?? 'KRW'),
+        lastPrice: num(price.lastPrice),
+        changeRate: price.changeRate == null ? null : num(price.changeRate),
+        tradingAmount: num(r.tradingAmount),
+        tradingVolume: num(r.tradingVolume),
+      };
+    });
+  }
+
   async getStatus(): Promise<BrokerStatus> {
     try {
       const account = await this.getAccount();

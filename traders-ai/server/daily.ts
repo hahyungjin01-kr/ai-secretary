@@ -1,6 +1,7 @@
 import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
 import { scoreSignals } from './signals.js';
+import { buildAutonomousUniverse, buildPlaybook } from './universe.js';
 import {
   loadState,
   saveState,
@@ -48,6 +49,7 @@ export async function runDailyAnalysis(force = false): Promise<{
   state: AppState;
   created: DailyAlert[];
   scanned: number;
+  universeSummary?: string;
   skippedReason?: string;
 }> {
   const state = loadState();
@@ -60,40 +62,56 @@ export async function runDailyAnalysis(force = false): Promise<{
       state,
       created: pending,
       scanned: 0,
-      skippedReason: '오늘은 이미 일일 분석을 실행했습니다. force로 재실행할 수 있습니다.',
+      universeSummary: state.lastUniverseSummary ?? undefined,
+      skippedReason: '오늘은 이미 AI 일일 선정을 실행했습니다. force로 재실행할 수 있습니다.',
     };
   }
 
-  // expire yesterday pending
   for (const a of state.alerts) {
     if (a.status === 'pending' && a.date !== date) a.status = 'expired';
   }
 
+  const heldSymbols = state.positions.map((p) => p.symbol);
+  const { candidates, summary } = await buildAutonomousUniverse(state.mode, heldSymbols);
+  state.lastUniverseSummary = summary;
+  state.lastUniverseSymbols = candidates.map((c) => c.symbol);
+  state.lastUniverseAt = new Date().toISOString();
+
   const created: DailyAlert[] = [];
   let buyCount = 0;
 
-  for (const symbol of state.watchlist) {
+  for (const cand of candidates) {
     try {
-      const research = await collectResearch(symbol);
+      const research = await collectResearch(cand.symbol);
       const held = state.positions.find((p) => p.symbol === research.symbol);
       const heldShares = held?.shares ?? 0;
       const decision = scoreSignals(research, mode, heldShares);
-
       if (decision.side === 'hold') continue;
 
       if (decision.side === 'buy') {
         if (buyCount >= mode.maxDailyBuyAlerts) continue;
         const { suggested, max } = suggestedBuyAmount(state, decision.entry, decision.stop);
-        if (max < decision.entry) continue; // can't afford 1 share effectively
+        if (max < decision.entry) continue;
+        const playbook = buildPlaybook({
+          side: 'buy',
+          style: cand.style,
+          mode: state.mode,
+          score: decision.score,
+          entry: decision.entry,
+          target: decision.target,
+          stop: decision.stop,
+          suggestedAmount: suggested,
+          currency: research.currency,
+        });
         buyCount += 1;
-        const alert: DailyAlert = {
+        created.push({
           id: uid('alert'),
           date,
           symbol: research.symbol,
           name: research.name,
           side: 'buy',
           score: decision.score,
-          thesis: decision.thesis,
+          thesis: `${cand.whySelected} / ${decision.thesis}`,
           entry: decision.entry,
           target: decision.target,
           stop: decision.stop,
@@ -102,6 +120,11 @@ export async function runDailyAnalysis(force = false): Promise<{
           currency: research.currency,
           mode: state.mode,
           status: 'pending',
+          strategy: playbook.strategy,
+          howToInvest: playbook.howToInvest,
+          horizon: playbook.horizon,
+          selectedBy: 'ai',
+          selectionSource: cand.source,
           researchSummary: {
             price: research.price,
             changePercent: research.changePercent,
@@ -110,18 +133,28 @@ export async function runDailyAnalysis(force = false): Promise<{
             newsTitles: research.news.slice(0, 3).map((n) => n.title),
           },
           createdAt: new Date().toISOString(),
-        };
-        created.push(alert);
+        });
       } else if (decision.side === 'sell' && heldShares > 0) {
         const { suggested, max } = suggestedSellAmount(heldShares, decision.entry, state.mode);
-        const alert: DailyAlert = {
+        const playbook = buildPlaybook({
+          side: 'sell',
+          style: 'trim',
+          mode: state.mode,
+          score: decision.score,
+          entry: decision.entry,
+          target: decision.target,
+          stop: decision.stop,
+          suggestedAmount: suggested,
+          currency: research.currency,
+        });
+        created.push({
           id: uid('alert'),
           date,
           symbol: research.symbol,
           name: research.name,
           side: 'sell',
           score: decision.score,
-          thesis: decision.thesis,
+          thesis: `${cand.whySelected} / ${decision.thesis}`,
           entry: decision.entry,
           target: decision.target,
           stop: decision.stop,
@@ -130,6 +163,11 @@ export async function runDailyAnalysis(force = false): Promise<{
           currency: research.currency,
           mode: state.mode,
           status: 'pending',
+          strategy: playbook.strategy,
+          howToInvest: playbook.howToInvest,
+          horizon: playbook.horizon,
+          selectedBy: 'ai',
+          selectionSource: cand.source,
           researchSummary: {
             price: research.price,
             changePercent: research.changePercent,
@@ -138,15 +176,13 @@ export async function runDailyAnalysis(force = false): Promise<{
             newsTitles: research.news.slice(0, 3).map((n) => n.title),
           },
           createdAt: new Date().toISOString(),
-        };
-        created.push(alert);
+        });
       }
     } catch (err) {
-      console.error('[daily]', symbol, err instanceof Error ? err.message : err);
+      console.error('[daily]', cand.symbol, err instanceof Error ? err.message : err);
     }
   }
 
-  // sort: sells first, then buy by score
   created.sort((a, b) => {
     if (a.side !== b.side) return a.side === 'sell' ? -1 : 1;
     return b.score - a.score;
@@ -155,7 +191,14 @@ export async function runDailyAnalysis(force = false): Promise<{
   state.alerts = [...created, ...state.alerts].slice(0, 200);
   state.lastDailyRunAt = new Date().toISOString();
   state.lastDailyRunDate = date;
+  // watchlist becomes AI's latest universe snapshot (not user-managed)
+  state.watchlist = state.lastUniverseSymbols.slice(0, 12);
   saveState(state);
 
-  return { state, created, scanned: state.watchlist.length };
+  return {
+    state,
+    created,
+    scanned: candidates.length,
+    universeSummary: summary,
+  };
 }

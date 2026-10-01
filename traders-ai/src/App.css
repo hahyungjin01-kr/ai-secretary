@@ -436,6 +436,29 @@ button.ghost {
   margin: 0.8rem 0;
 }
 
+.playbook {
+  margin: 0 0 0.9rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(11, 110, 79, 0.08);
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.playbook strong {
+  display: inline-block;
+  margin-right: 0.35rem;
+  color: var(--teal);
+}
+
+.universe-symbols {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .metrics {
   margin: 0;
   display: grid;

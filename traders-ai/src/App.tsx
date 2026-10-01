@@ -69,7 +69,10 @@ function AlertCard({
     <article className={`alert-card ${alert.side}`}>
       <header>
         <div>
-          <p className="alert-kicker">{isBuy ? '오늘 매수 알림' : '오늘 매도 알림'}</p>
+          <p className="alert-kicker">
+            AI 선정 · {isBuy ? '매수' : '매도'}
+            {alert.selectionSource ? ` · ${alert.selectionSource}` : ''}
+          </p>
           <h3>
             {alert.name} <span>{alert.symbol}</span>
           </h3>
@@ -81,6 +84,12 @@ function AlertCard({
       </header>
 
       <p className="thesis">{alert.thesis}</p>
+      {alert.howToInvest && (
+        <p className="playbook">
+          <strong>투자 방식</strong> {alert.howToInvest}
+          {alert.horizon ? ` (기간: ${alert.horizon})` : ''}
+        </p>
+      )}
 
       <dl className="metrics">
         <div>
@@ -96,8 +105,8 @@ function AlertCard({
           <dd>{money(alert.stop, alert.currency)}</dd>
         </div>
         <div>
-          <dt>RSI</dt>
-          <dd>{alert.researchSummary.rsi14 ?? '—'}</dd>
+          <dt>전략</dt>
+          <dd>{alert.strategy ?? '—'}</dd>
         </div>
       </dl>
 
@@ -111,7 +120,7 @@ function AlertCard({
 
       <div className="amount-box">
         <label htmlFor={`amt-${alert.id}`}>
-          {isBuy ? '얼마를 투자할까요?' : '얼마를 매도할까요?'}
+          {isBuy ? 'AI 추천 금액으로 투자할까요?' : 'AI 추천 금액으로 매도할까요?'}
         </label>
         <div className="amount-row">
           <input
@@ -141,7 +150,7 @@ function AlertCard({
           </button>
         </div>
         <p className="hint">
-          금액만 입력하면 AI가 모드 한도 안에서 수량·체결을 결정합니다. (모의투자)
+          종목·전략은 AI가 골랐습니다. 금액만 확인/수정하면 모드 한도 안에서 체결합니다.
         </p>
       </div>
 
@@ -168,7 +177,6 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [watchlistText, setWatchlistText] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [liveConfirm, setLiveConfirm] = useState('');
   const [brokerBusy, setBrokerBusy] = useState(false);
@@ -176,7 +184,6 @@ export default function App() {
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
     setDash(data);
-    setWatchlistText(data.watchlist.join(', '));
   }, []);
 
   useEffect(() => {
@@ -194,24 +201,9 @@ export default function App() {
     try {
       const data = await updateSettings({ mode });
       setDash(data);
-      setNotice(`${data.modeProfile.label} 모드로 전환했습니다. 다음 일일 분석부터 적용됩니다.`);
+      setNotice(`${data.modeProfile.label} 모드로 전환했습니다. 다음 AI 선정부터 적용됩니다.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : '모드 변경 실패');
-    }
-  }
-
-  async function onSaveWatchlist() {
-    setError(null);
-    try {
-      const list = watchlistText
-        .split(/[,\s]+/)
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean);
-      const data = await updateSettings({ watchlist: list });
-      setDash(data);
-      setNotice('관심종목을 저장했습니다.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '관심종목 저장 실패');
     }
   }
 
@@ -222,11 +214,10 @@ export default function App() {
     try {
       const data = await runDaily(force);
       setDash(data);
-      setWatchlistText(data.watchlist.join(', '));
       if (data.skippedReason) setNotice(data.skippedReason);
       else
         setNotice(
-          `자동 분석 완료: ${data.scanned}종목 스캔, 신규 알림 ${data.createdCount ?? 0}건`,
+          `${data.universeSummary ?? 'AI 선정 완료'} · 스캔 ${data.scanned} · 알림 ${data.createdCount ?? 0}건`,
         );
     } catch (e) {
       setError(e instanceof Error ? e.message : '일일 분석 실패');
@@ -334,10 +325,10 @@ export default function App() {
       <main className="shell">
         <section className="hero">
           <div className="hero-copy">
-            <h1>모드를 고르고, 매일 오는 알림에 금액만 답하세요</h1>
+            <h1>모드만 고르면, 종목과 투자 방식은 AI가 매일 고릅니다</h1>
             <p>
-              시세·차트·뉴스는 앱이 스스로 조사합니다. 토스증권 계좌를 연결하면 알림에 입력한
-              금액으로 주문이 나갑니다. (LIVE 확인 전엔 로컬 모의)
+              관심종목을 넣을 필요 없습니다. AI가 모드에 맞게 종목을 고르고, 어떻게 들어갈지
+              정리해 알림을 보냅니다. 사용자는 금액만 확인하면 됩니다.
             </p>
           </div>
 
@@ -481,12 +472,12 @@ export default function App() {
         <section className="panel controls">
           <div className="controls-head">
             <div>
-              <h2>일일 자동 분석</h2>
+              <h2>AI 일일 종목 선정</h2>
               <p>
-                마지막 실행:{' '}
+                {dash.lastUniverseSummary ?? '아직 선정 없음'}
                 {dash.lastDailyRunAt
-                  ? new Date(dash.lastDailyRunAt).toLocaleString('ko-KR')
-                  : '아직 없음'}
+                  ? ` · ${new Date(dash.lastDailyRunAt).toLocaleString('ko-KR')}`
+                  : ''}
               </p>
             </div>
             <div className="controls-actions">
@@ -496,7 +487,7 @@ export default function App() {
                 disabled={scanning}
                 onClick={() => onScan(false)}
               >
-                {scanning ? '분석 중…' : '오늘 분석 실행'}
+                {scanning ? 'AI 선정 중…' : '오늘 AI 선정 실행'}
               </button>
               <button
                 type="button"
@@ -504,25 +495,17 @@ export default function App() {
                 disabled={scanning}
                 onClick={() => onScan(true)}
               >
-                강제 재분석
+                강제 재선정
               </button>
             </div>
           </div>
 
-          <label className="watch-label" htmlFor="watchlist">
-            관심종목 (쉼표 구분)
-          </label>
-          <div className="watch-row">
-            <input
-              id="watchlist"
-              value={watchlistText}
-              onChange={(e) => setWatchlistText(e.target.value)}
-              placeholder="005930, 000660, AAPL"
-            />
-            <button type="button" className="ghost" onClick={onSaveWatchlist}>
-              저장
-            </button>
-          </div>
+          {(dash.lastUniverseSymbols?.length ?? 0) > 0 && (
+            <p className="universe-symbols">
+              스캔 유니버스: {(dash.lastUniverseSymbols ?? []).slice(0, 16).join(', ')}
+              {(dash.lastUniverseSymbols?.length ?? 0) > 16 ? ' …' : ''}
+            </p>
+          )}
 
           <dl className="mode-limits">
             <div>
@@ -551,12 +534,12 @@ export default function App() {
         )}
 
         <section className="panel">
-          <h2>오늘의 알림</h2>
+          <h2>AI 오늘의 투자 제안</h2>
           {pending.length === 0 ? (
             <p className="empty">
               {dash.lastDailyRunDate
-                ? '오늘 분석 기준, 모드 조건을 통과한 매수/매도 알림이 없습니다. 모드를 바꾸거나 강제 재분석을 해보세요.'
-                : '아직 일일 분석이 없습니다. 「오늘 분석 실행」으로 관심종목을 스캔하세요.'}
+                ? '오늘 AI 선정 기준, 실행할 매수/매도 제안이 없습니다. 모드를 바꾸거나 강제 재선정을 해보세요.'
+                : '아직 AI 선정이 없습니다. 「오늘 AI 선정 실행」을 누르세요.'}
             </p>
           ) : (
             <div className="alert-list">

@@ -42,6 +42,11 @@ export interface DailyAlert {
   currency: string;
   mode: TraderMode;
   status: 'pending' | 'executed' | 'skipped' | 'expired';
+  strategy?: string;
+  howToInvest?: string;
+  horizon?: string;
+  selectedBy?: 'ai' | 'user';
+  selectionSource?: string;
   researchSummary: {
     price: number;
     changePercent: number | null;
@@ -113,6 +118,9 @@ export interface Dashboard {
   trades: TradeRecord[];
   lastDailyRunAt: string | null;
   lastDailyRunDate: string | null;
+  lastUniverseSummary?: string | null;
+  lastUniverseSymbols?: string[];
+  lastUniverseAt?: string | null;
   preferBroker: boolean;
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
@@ -121,6 +129,7 @@ export interface Dashboard {
   disclaimer: string;
   createdCount?: number;
   scanned?: number;
+  universeSummary?: string;
   skippedReason?: string;
   created?: DailyAlert[];
   alert?: DailyAlert;
