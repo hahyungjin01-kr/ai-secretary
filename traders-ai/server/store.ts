@@ -27,7 +27,7 @@ export interface TradeRecord {
   mode: TraderMode;
   reason: string;
   at: string;
-  venue?: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+  venue?: 'local-paper' | 'toss';
   brokerOrderId?: string;
   brokerStatus?: string;
 }
@@ -74,7 +74,7 @@ export interface AppState {
   trades: TradeRecord[];
   lastDailyRunAt: string | null;
   lastDailyRunDate: string | null;
-  /** 실계좌(Alpaca Live) 주문 잠금 해제. 기본 false */
+  /** 토스 실주문 잠금 해제. 기본 false */
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
   preferBroker: boolean;
@@ -82,10 +82,10 @@ export interface AppState {
 
 const DEFAULT_STATE: AppState = {
   mode: 'balance',
-  watchlist: ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN'],
-  cash: 10_000,
-  startingCash: 10_000,
-  currency: 'USD',
+  watchlist: ['005930', '000660', '035420', 'AAPL', 'TSLA'],
+  cash: 10_000_000,
+  startingCash: 10_000_000,
+  currency: 'KRW',
   positions: [],
   alerts: [],
   trades: [],

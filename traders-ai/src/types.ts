@@ -65,7 +65,7 @@ export interface TradeRecord {
   mode: TraderMode;
   reason: string;
   at: string;
-  venue?: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+  venue?: 'local-paper' | 'toss';
   brokerOrderId?: string;
   brokerStatus?: string;
 }
@@ -86,8 +86,8 @@ export interface BrokerAccount {
 export interface BrokerStatus {
   configured: boolean;
   connected: boolean;
-  venue: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
-  provider: 'none' | 'alpaca';
+  venue: 'local-paper' | 'toss';
+  provider: 'none' | 'toss';
   baseUrl: string | null;
   liveCapable: boolean;
   liveArmed: boolean;

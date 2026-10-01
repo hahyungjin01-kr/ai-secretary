@@ -35,7 +35,7 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
   });
 
   const usingBroker = broker.configured && broker.connected && state.preferBroker;
-  const paperTrading = !(usingBroker && broker.venue === 'alpaca-live' && state.liveTradingArmed);
+  const paperTrading = !(usingBroker && state.liveTradingArmed);
 
   return {
     mode: state.mode,
@@ -64,12 +64,10 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer: usingBroker
-      ? broker.venue === 'alpaca-live'
-        ? state.liveTradingArmed
-          ? 'Alpaca 실계좌 주문이 활성화되어 있습니다. 실제 손실이 발생할 수 있습니다.'
-          : 'Alpaca 실계좌는 연결됐지만 실주문은 잠겨 있습니다. LIVE 확인 후에만 주문됩니다.'
-        : 'Alpaca 페이퍼 계좌로 주문합니다. 실돈이 움직이지 않습니다.'
-      : '로컬 모의투자 엔진입니다. .env에 Alpaca 키를 넣으면 계좌 연동 주문이 가능합니다.',
+      ? state.liveTradingArmed
+        ? '토스증권 실주문이 활성화되어 있습니다. 실제 손실이 발생할 수 있습니다.'
+        : '토스증권 계좌는 연결됐지만 실주문은 잠겨 있습니다. LIVE 확인 후에만 토스로 주문됩니다.'
+      : '로컬 모의투자 엔진입니다. .env에 토스 Open API 키를 넣으면 계좌 연동이 가능합니다.',
   };
 }
 
@@ -94,11 +92,12 @@ app.get('/api/health', async (_req, res) => {
   res.json({
     ok: true,
     service: 'traders-ai',
-    model: 'mode-daily-broker-execution',
+    model: 'mode-daily-toss-execution',
     broker: {
       configured: broker.configured,
       connected: broker.connected,
       venue: broker.venue,
+      provider: broker.provider,
     },
   });
 });
@@ -157,14 +156,7 @@ app.post('/api/broker/live', async (req, res) => {
 
     if (arm) {
       if (!summary.configured) {
-        res.status(400).json({ error: 'Alpaca API 키가 설정되지 않았습니다.' });
-        return;
-      }
-      if (!summary.liveCapable) {
-        res.status(400).json({
-          error:
-            '현재 키가 페이퍼 URL입니다. 실계좌를 쓰려면 ALPACA_LIVE=true 또는 ALPACA_BASE_URL=https://api.alpaca.markets 로 설정하세요.',
-        });
+        res.status(400).json({ error: '토스증권 API 키가 설정되지 않았습니다.' });
         return;
       }
       if (confirm !== 'LIVE') {
@@ -218,10 +210,9 @@ app.patch('/api/settings', async (req, res) => {
         res.status(400).json({ error: 'cash는 0 이상이어야 합니다.' });
         return;
       }
-      // only allow manual cash edit when not using broker
       if (state.preferBroker && brokerConfigSummary().configured) {
         res.status(400).json({
-          error: '브로커 연동 중에는 현금을 수동 수정할 수 없습니다. 브로커 잔고를 동기화하세요.',
+          error: '토스 연동 중에는 현금을 수동 수정할 수 없습니다. 잔고 동기화를 사용하세요.',
         });
         return;
       }
@@ -307,7 +298,7 @@ app.listen(PORT, () => {
   console.log(`Traders AI listening on http://localhost:${PORT}`);
   console.log(
     setup.configured
-      ? `Broker: Alpaca (${setup.venue}) @ ${setup.baseUrl}`
-      : 'Broker: not configured (local paper). Set ALPACA_API_KEY/SECRET in .env',
+      ? `Broker: Toss Securities @ ${setup.baseUrl}`
+      : 'Broker: not configured (local paper). Set TOSS_CLIENT_ID/TOSS_CLIENT_SECRET in .env',
   );
 });

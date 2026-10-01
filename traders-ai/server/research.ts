@@ -11,12 +11,29 @@ function round(n: number, d = 2): number {
   return Math.round(n * p) / p;
 }
 
+/** 토스 심볼(005930, AAPL) → Yahoo 조회용 심볼 */
+export function toYahooSymbol(symbol: string): string {
+  const s = symbol.trim().toUpperCase();
+  if (/^[0-9]{6}$/.test(s)) return `${s}.KS`;
+  if (/^[0-9A-Z]{6}$/.test(s) && /\d/.test(s)) return `${s}.KS`;
+  return s;
+}
+
+/** Yahoo 심볼 → 앱/토스용 심볼 */
+export function toAppSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase().replace(/\.(KS|KQ)$/i, '');
+}
+
 export async function resolveSymbol(query: string): Promise<string> {
   const q = query.trim();
   if (!q) throw new Error('종목 심볼 또는 이름을 입력하세요.');
 
-  if (/^[A-Za-z]{1,5}(\.[A-Za-z]{1,3})?$/.test(q)) {
+  // 이미 토스/야후 형식
+  if (/^[0-9]{6}$/.test(q) || /^[0-9A-Z]{6}$/.test(q.toUpperCase())) {
     return q.toUpperCase();
+  }
+  if (/^[A-Za-z]{1,5}(\.[A-Za-z]{1,3})?$/.test(q)) {
+    return toAppSymbol(q);
   }
 
   const search = await yahooFinance.search(q);
@@ -29,28 +46,41 @@ export async function resolveSymbol(query: string): Promise<string> {
   if (!match?.symbol) {
     throw new Error(`종목을 찾지 못했습니다: ${q}`);
   }
-  return String(match.symbol);
+  return toAppSymbol(String(match.symbol));
 }
 
 export async function collectResearch(inputSymbol: string): Promise<ResearchBundle> {
   const symbol = await resolveSymbol(inputSymbol);
+  const yahooSymbol = toYahooSymbol(symbol);
   const warnings: string[] = [];
 
   const end = new Date();
   const start = new Date();
   start.setDate(end.getDate() - 120);
 
-  const [quote, historical, summary, search] = await Promise.all([
-    yahooFinance.quote(symbol).catch(() => null),
+  async function loadQuote(sym: string) {
+    return yahooFinance.quote(sym).catch(() => null);
+  }
+
+  let quote = await loadQuote(yahooSymbol);
+  let usedYahoo = yahooSymbol;
+  // KOSDAQ 등 .KS 실패 시 .KQ 재시도
+  if ((!quote || quote.regularMarketPrice == null) && /^[0-9A-Z]{6}\.KS$/.test(yahooSymbol)) {
+    const alt = yahooSymbol.replace(/\.KS$/, '.KQ');
+    quote = await loadQuote(alt);
+    if (quote?.regularMarketPrice != null) usedYahoo = alt;
+  }
+
+  const [historical, summary, search] = await Promise.all([
     yahooFinance
-      .historical(symbol, { period1: start, period2: end, interval: '1d' })
+      .historical(usedYahoo, { period1: start, period2: end, interval: '1d' })
       .catch(() => [] as Awaited<ReturnType<typeof yahooFinance.historical>>),
     yahooFinance
-      .quoteSummary(symbol, {
+      .quoteSummary(usedYahoo, {
         modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'],
       })
       .catch(() => null),
-    yahooFinance.search(symbol).catch(() => null),
+    yahooFinance.search(usedYahoo).catch(() => null),
   ]);
 
   if (!quote || quote.regularMarketPrice == null) {

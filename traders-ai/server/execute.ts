@@ -115,10 +115,10 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
   const now = new Date().toISOString();
   state.positions = positions.map((p) => ({
     symbol: p.symbol,
-    name: p.symbol,
+    name: p.name || p.symbol,
     shares: p.qty,
     avgPrice: p.avgEntryPrice,
-    currency: account.currency || 'USD',
+    currency: p.currency || account.currency || 'KRW',
     updatedAt: now,
   }));
 
@@ -128,7 +128,7 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
 
 /**
  * 사용자가 금액만 입력하면, 모드 규칙 + 현재가로 수량/체결을 시스템이 결정합니다.
- * Alpaca 키가 있으면 브로커로 주문하고, 없으면 로컬 모의체결합니다.
+ * 토스증권 키가 있고 LIVE가 켜져 있으면 실주문, 없으면 로컬 모의체결합니다.
  */
 export async function actOnAlert(
   alertId: string,
@@ -190,7 +190,9 @@ export async function actOnAlert(
   let fillPrice = price;
   let note = '';
 
-  if (broker) {
+  const canLiveOrder = Boolean(broker && state.liveTradingArmed);
+
+  if (canLiveOrder && broker) {
     try {
       const order = await broker.placeOrder({
         symbol: alert.symbol,
@@ -198,7 +200,7 @@ export async function actOnAlert(
         qty: shares,
         type: 'market',
         timeInForce: 'day',
-        clientOrderId: `tai_${alert.id}`.slice(0, 48),
+        clientOrderId: `tai_${alert.id}`.slice(0, 36),
       });
       venue = broker.venue;
       brokerOrderId = order.id;
@@ -208,12 +210,11 @@ export async function actOnAlert(
       }
       if (order.filledQty > 0) shares = order.filledQty;
 
-      // resync canonical balances from broker
       state = await syncFromBroker(state);
-      note = `${MODE_PROFILES[state.mode].label} · ${venue} 주문 ${shares}주 (${order.status})`;
+      note = `${MODE_PROFILES[state.mode].label} · 토스증권 주문 ${shares}주 (${order.status})`;
     } catch (err) {
       const msg = err instanceof BrokerError || err instanceof Error ? err.message : '주문 실패';
-      throw new ExecuteError(`브로커 주문 실패: ${msg}`);
+      throw new ExecuteError(`토스 주문 실패: ${msg}`);
     }
   } else {
     if (alert.side === 'buy') {
@@ -221,7 +222,9 @@ export async function actOnAlert(
     } else {
       shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
     }
-    note = `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'} 체결 (로컬 모의)`;
+    note = broker
+      ? `${MODE_PROFILES[state.mode].label} · 실주문 잠금 상태라 로컬 모의로 ${shares}주 체결`
+      : `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'} 체결 (로컬 모의)`;
   }
 
   const trade: TradeRecord = {

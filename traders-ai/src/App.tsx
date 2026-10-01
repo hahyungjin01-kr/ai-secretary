@@ -294,11 +294,10 @@ export default function App() {
 
   function venueBadge(dash: Dashboard) {
     if (!dash.broker.configured) return `로컬 모의 · ${modeLabel}`;
-    if (!dash.broker.connected) return `연결 실패 · ${modeLabel}`;
-    if (dash.broker.venue === 'alpaca-live') {
-      return dash.liveTradingArmed ? `실계좌 LIVE · ${modeLabel}` : `실계좌 잠금 · ${modeLabel}`;
-    }
-    return `Alpaca 페이퍼 · ${modeLabel}`;
+    if (!dash.broker.connected) return `토스 연결 실패 · ${modeLabel}`;
+    return dash.liveTradingArmed
+      ? `토스 LIVE · ${modeLabel}`
+      : `토스 연결(잠금) · ${modeLabel}`;
   }
 
   if (loading) {
@@ -337,8 +336,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>모드를 고르고, 매일 오는 알림에 금액만 답하세요</h1>
             <p>
-              시세·차트·뉴스는 앱이 스스로 조사합니다. Alpaca 계좌를 연결하면 알림에 입력한
-              금액으로 실제(또는 페이퍼) 주문이 나갑니다.
+              시세·차트·뉴스는 앱이 스스로 조사합니다. 토스증권 계좌를 연결하면 알림에 입력한
+              금액으로 주문이 나갑니다. (LIVE 확인 전엔 로컬 모의)
             </p>
           </div>
 
@@ -380,7 +379,7 @@ export default function App() {
         <section className="panel broker">
           <div className="controls-head">
             <div>
-              <h2>계좌 연동 (Alpaca)</h2>
+              <h2>계좌 연동 (토스증권)</h2>
               <p>{dash.broker.message}</p>
               {dash.broker.error && <p className="broker-error">{dash.broker.error}</p>}
             </div>
@@ -399,22 +398,18 @@ export default function App() {
           {!dash.broker.configured ? (
             <ol className="setup-steps">
               <li>
-                <a href="https://app.alpaca.markets" target="_blank" rel="noreferrer">
-                  Alpaca
+                토스증권 WTS/앱 → 설정 →{' '}
+                <a href="https://developers.tossinvest.com/docs" target="_blank" rel="noreferrer">
+                  Open API
                 </a>
-                에서 계좌를 만들고 API Key를 발급하세요.
+                에서 <code>client_id</code>, <code>client_secret</code> 발급
               </li>
+              <li>같은 메뉴에서 <strong>허용 IP</strong>에 이 PC/서버 IP 등록</li>
               <li>
-                <code>traders-ai/.env.example</code>을 복사해 <code>.env</code>를 만드세요.
+                <code>/workspace/traders-ai/.env</code>에{' '}
+                <code>TOSS_CLIENT_ID</code>, <code>TOSS_CLIENT_SECRET</code> 입력
               </li>
-              <li>
-                <code>ALPACA_API_KEY</code>, <code>ALPACA_API_SECRET</code>를 넣고 서버를 다시
-                시작하세요.
-              </li>
-              <li>
-                처음엔 페이퍼 URL 권장. 실계좌는 <code>ALPACA_LIVE=true</code> 후 아래에서 LIVE
-                확인.
-              </li>
+              <li>서버 재시작 후 잔고 동기화 → 필요할 때만 아래에서 LIVE 활성화</li>
             </ol>
           ) : (
             <dl className="mode-limits">
@@ -423,17 +418,11 @@ export default function App() {
                 <dd>{dash.broker.connected ? 'OK' : '실패'}</dd>
               </div>
               <div>
-                <dt>환경</dt>
-                <dd>
-                  {dash.broker.venue === 'alpaca-live'
-                    ? '실계좌'
-                    : dash.broker.venue === 'alpaca-paper'
-                      ? '페이퍼'
-                      : '로컬'}
-                </dd>
+                <dt>증권사</dt>
+                <dd>토스증권</dd>
               </div>
               <div>
-                <dt>Buying Power</dt>
+                <dt>매수가능</dt>
                 <dd>
                   {dash.broker.account
                     ? money(dash.broker.account.buyingPower, dash.broker.account.currency)
@@ -447,7 +436,7 @@ export default function App() {
             </dl>
           )}
 
-          {dash.broker.liveCapable && (
+          {dash.broker.configured && (
             <div className="live-arm">
               {dash.liveTradingArmed ? (
                 <button
@@ -461,7 +450,7 @@ export default function App() {
               ) : (
                 <>
                   <label htmlFor="live-confirm">
-                    실주문 켜려면 아래칸에 <strong>LIVE</strong> 입력
+                    토스 실주문 켜려면 아래칸에 <strong>LIVE</strong> 입력
                   </label>
                   <div className="watch-row">
                     <input
@@ -480,7 +469,9 @@ export default function App() {
                       실주문 활성화
                     </button>
                   </div>
-                  <p className="hint">실돈이 이동합니다. 활성화 전에 금액·모드를 다시 확인하세요.</p>
+                  <p className="hint">
+                    토스증권 실계좌로 주문이 나갑니다. 잠금 상태에선 로컬 모의만 합니다.
+                  </p>
                 </>
               )}
             </div>
@@ -526,7 +517,7 @@ export default function App() {
               id="watchlist"
               value={watchlistText}
               onChange={(e) => setWatchlistText(e.target.value)}
-              placeholder="AAPL, MSFT, NVDA"
+              placeholder="005930, 000660, AAPL"
             />
             <button type="button" className="ghost" onClick={onSaveWatchlist}>
               저장

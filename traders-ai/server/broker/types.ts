@@ -1,4 +1,4 @@
-export type BrokerVenue = 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+export type BrokerVenue = 'local-paper' | 'toss';
 
 export interface BrokerAccount {
   id: string;
@@ -11,22 +11,29 @@ export interface BrokerAccount {
   patternDayTrader: boolean;
   tradingBlocked: boolean;
   accountBlocked: boolean;
+  /** 토스 accountSeq */
+  accountSeq?: number;
+  accountNo?: string;
+  cashUsd?: number | null;
+  marketValueKrw?: number;
+  marketValueUsd?: number | null;
 }
 
 export interface BrokerPosition {
   symbol: string;
+  name: string;
   qty: number;
   avgEntryPrice: number;
   marketValue: number;
   currentPrice: number;
   unrealizedPl: number;
   unrealizedPlpc: number;
+  currency: string;
 }
 
 export interface BrokerOrderRequest {
   symbol: string;
   side: 'buy' | 'sell';
-  /** whole shares */
   qty: number;
   type?: 'market' | 'limit';
   limitPrice?: number;
@@ -50,7 +57,7 @@ export interface BrokerStatus {
   configured: boolean;
   connected: boolean;
   venue: BrokerVenue;
-  provider: 'none' | 'alpaca';
+  provider: 'none' | 'toss';
   baseUrl: string | null;
   liveCapable: boolean;
   liveArmed: boolean;
@@ -61,7 +68,7 @@ export interface BrokerStatus {
 
 export interface BrokerClient {
   venue: BrokerVenue;
-  provider: 'alpaca';
+  provider: 'toss';
   getStatus(): Promise<BrokerStatus>;
   getAccount(): Promise<BrokerAccount>;
   getPositions(): Promise<BrokerPosition[]>;
