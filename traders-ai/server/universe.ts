@@ -2,7 +2,12 @@ import { getBroker } from './broker/index.js';
 import type { TossBroker } from './broker/toss.js';
 import type { TraderMode } from './modes.js';
 
-export type StrategyStyle = 'mean_reversion' | 'momentum' | 'break_follow' | 'trim';
+export type StrategyStyle =
+  | 'mean_reversion'
+  | 'momentum'
+  | 'break_follow'
+  | 'flow_follow'
+  | 'trim';
 
 export interface CandidatePick {
   symbol: string;

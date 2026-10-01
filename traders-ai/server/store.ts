@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TraderMode } from './modes.js';
+import { FS_STATE_PATH, getDb } from './firestoreDb.js';
+import { useFirestoreBackend } from './runtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../data');
@@ -144,8 +146,37 @@ function ensureDataDir() {
   }
 }
 
+function normalizeState(raw: Partial<AppState> | null | undefined): AppState {
+  const r = raw ?? {};
+  return {
+    ...DEFAULT_STATE,
+    ...r,
+    positions: r.positions ?? [],
+    alerts: r.alerts ?? [],
+    trades: r.trades ?? [],
+    watchlist: r.watchlist?.length ? r.watchlist : DEFAULT_STATE.watchlist,
+    liveTradingArmed: Boolean(r.liveTradingArmed),
+    liveArmedAt: r.liveArmedAt ?? null,
+    preferBroker: r.preferBroker !== false,
+    lastUniverseSummary: r.lastUniverseSummary ?? null,
+    lastUniverseSymbols: r.lastUniverseSymbols ?? [],
+    lastUniverseAt: r.lastUniverseAt ?? null,
+    liveTradingUnlocked: r.liveTradingUnlocked !== false,
+    liveUnlockedAt: r.liveUnlockedAt ?? null,
+    paperStartedAt: r.paperStartedAt ?? null,
+    paperTradeDates: Array.isArray(r.paperTradeDates) ? r.paperTradeDates : [],
+    dayBaseline: r.dayBaseline ?? null,
+    killSwitchActive: Boolean(r.killSwitchActive),
+    killSwitchReason: r.killSwitchReason ?? null,
+  };
+}
+
 /** 단일 작가 큐 — 동시 load/save 경합 완화 */
 let writeChain: Promise<void> = Promise.resolve();
+let memory: AppState | null = null;
+let hydrated = false;
+let hydratePromise: Promise<void> | null = null;
+let persistChain: Promise<void> = Promise.resolve();
 
 export function withStateLock<T>(fn: () => T | Promise<T>): Promise<T> {
   const run = writeChain.then(fn, fn);
@@ -164,27 +195,7 @@ function readStateUnsynced(): AppState {
   }
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')) as AppState;
-    return {
-      ...DEFAULT_STATE,
-      ...raw,
-      positions: raw.positions ?? [],
-      alerts: raw.alerts ?? [],
-      trades: raw.trades ?? [],
-      watchlist: raw.watchlist?.length ? raw.watchlist : DEFAULT_STATE.watchlist,
-      liveTradingArmed: Boolean(raw.liveTradingArmed),
-      liveArmedAt: raw.liveArmedAt ?? null,
-      preferBroker: raw.preferBroker !== false,
-      lastUniverseSummary: raw.lastUniverseSummary ?? null,
-      lastUniverseSymbols: raw.lastUniverseSymbols ?? [],
-      lastUniverseAt: raw.lastUniverseAt ?? null,
-      liveTradingUnlocked: raw.liveTradingUnlocked !== false,
-      liveUnlockedAt: raw.liveUnlockedAt ?? null,
-      paperStartedAt: raw.paperStartedAt ?? null,
-      paperTradeDates: Array.isArray(raw.paperTradeDates) ? raw.paperTradeDates : [],
-      dayBaseline: raw.dayBaseline ?? null,
-      killSwitchActive: Boolean(raw.killSwitchActive),
-      killSwitchReason: raw.killSwitchReason ?? null,
-    };
+    return normalizeState(raw);
   } catch {
     return structuredClone(DEFAULT_STATE);
   }
@@ -197,12 +208,75 @@ function writeStateUnsynced(state: AppState): void {
   fs.renameSync(tmp, STATE_PATH);
 }
 
+async function readStateFirestore(): Promise<AppState> {
+  const snap = await getDb().collection(FS_STATE_PATH.collection).doc(FS_STATE_PATH.stateDoc).get();
+  if (!snap.exists) {
+    const initial = structuredClone(DEFAULT_STATE);
+    await getDb()
+      .collection(FS_STATE_PATH.collection)
+      .doc(FS_STATE_PATH.stateDoc)
+      .set({ ...initial, updatedAt: new Date().toISOString() });
+    return initial;
+  }
+  return normalizeState(snap.data() as Partial<AppState>);
+}
+
+async function writeStateFirestore(state: AppState): Promise<void> {
+  await getDb()
+    .collection(FS_STATE_PATH.collection)
+    .doc(FS_STATE_PATH.stateDoc)
+    .set({ ...state, updatedAt: new Date().toISOString() });
+}
+
+/** Cloud(Firestore) 경로에서는 요청 전에 호출. 로컬은 no-op에 가깝게 즉시 완료. */
+export async function ensureStoreReady(): Promise<void> {
+  if (hydrated && memory) return;
+  if (hydratePromise) {
+    await hydratePromise;
+    return;
+  }
+  hydratePromise = (async () => {
+    if (useFirestoreBackend()) {
+      memory = await readStateFirestore();
+    } else {
+      memory = readStateUnsynced();
+    }
+    hydrated = true;
+  })();
+  try {
+    await hydratePromise;
+  } finally {
+    hydratePromise = null;
+  }
+}
+
 export function loadState(): AppState {
-  return readStateUnsynced();
+  if (memory) return memory;
+  if (useFirestoreBackend()) {
+    throw new Error('Store not ready — await ensureStoreReady() first (Firestore backend)');
+  }
+  memory = readStateUnsynced();
+  hydrated = true;
+  return memory;
 }
 
 export function saveState(state: AppState): void {
-  writeStateUnsynced(state);
+  memory = state;
+  if (!useFirestoreBackend()) {
+    writeStateUnsynced(state);
+    return;
+  }
+  const snapshot = structuredClone(state);
+  persistChain = persistChain
+    .then(() => writeStateFirestore(snapshot))
+    .catch((err) => {
+      console.error('[store] firestore persist failed', err);
+    });
+}
+
+/** 응답 전에 Firestore 쓰기를 끝낼 때 사용 */
+export async function waitForStorePersist(): Promise<void> {
+  await persistChain;
 }
 
 /** 비동기 단일 작가 경로 (스케줄/동시 요청용) */
@@ -210,9 +284,11 @@ export async function updateState(
   mutator: (state: AppState) => void | Promise<void>,
 ): Promise<AppState> {
   return withStateLock(async () => {
-    const state = readStateUnsynced();
+    await ensureStoreReady();
+    const state = loadState();
     await mutator(state);
-    writeStateUnsynced(state);
+    saveState(state);
+    await waitForStorePersist();
     return state;
   });
 }

@@ -1,12 +1,19 @@
 import { flushQueuedOrders, syncFromBroker } from './execute.js';
 import { runDailyAnalysis } from './daily.js';
-import { loadState } from './store.js';
 import {
+  ensureStoreReady,
+  loadState,
+  waitForStorePersist,
+} from './store.js';
+import {
+  ensurePushReady,
   getNotifyInfo,
   notifyEnabled,
   notifyTimeKst,
   sendDailyConfirmReminder,
+  waitForPushPersist,
 } from './push.js';
+import { useInProcessScheduler } from './runtime.js';
 
 export interface ScheduleInfo {
   enabled: boolean;
@@ -122,6 +129,92 @@ export function executeQueuedTimeKst(): string {
   return /^\d{1,2}:\d{2}$/.test(raw) ? raw.padStart(5, '0') : '09:05';
 }
 
+async function readyForJob() {
+  await ensureStoreReady();
+  await ensurePushReady();
+}
+
+async function finishJob() {
+  await waitForStorePersist();
+  await waitForPushPersist();
+}
+
+/** Cloud Scheduler / 수동 호출용 — 시각 매칭 없이 바로 일일 분석 */
+export async function runScheduledAnalysisJob(): Promise<string> {
+  await readyForJob();
+  lastAttemptAt = new Date().toISOString();
+  try {
+    if (!scheduleEnabled()) {
+      lastResult = '스케줄 꺼짐';
+      return lastResult;
+    }
+    try {
+      await syncFromBroker(loadState());
+    } catch (err) {
+      console.warn('[scheduler] sync', err instanceof Error ? err.message : err);
+    }
+    const result = await runDailyAnalysis(false);
+    lastResult = result.skippedReason
+      ? result.skippedReason
+      : `생성 ${result.created.length}건 / 스캔 ${result.scanned}`;
+    console.log('[scheduler] daily run', lastResult);
+    return lastResult;
+  } catch (err) {
+    lastResult = err instanceof Error ? err.message : '스케줄 실행 실패';
+    console.error('[scheduler]', lastResult);
+    throw err;
+  } finally {
+    await finishJob();
+  }
+}
+
+/** Cloud Scheduler / 수동 호출용 — 최종 확인 푸시 */
+export async function runScheduledNotifyJob(): Promise<string> {
+  await readyForJob();
+  lastNotifyAttemptAt = new Date().toISOString();
+  try {
+    if (!notifyEnabled()) {
+      lastNotifyResult = '알림 스케줄 꺼짐';
+      return lastNotifyResult;
+    }
+    const result = await sendDailyConfirmReminder();
+    lastNotifyResult = result.skippedReason
+      ? result.skippedReason
+      : `알림 ${result.sent}건 (대기 ${result.pending})`;
+    console.log('[scheduler] notify', lastNotifyResult);
+    return lastNotifyResult;
+  } catch (err) {
+    lastNotifyResult = err instanceof Error ? err.message : '알림 실패';
+    console.error('[scheduler] notify', lastNotifyResult);
+    throw err;
+  } finally {
+    await finishJob();
+  }
+}
+
+/** Cloud Scheduler / 수동 호출용 — 예약(queued) 주문 플러시 */
+export async function runScheduledFlushJob(): Promise<string> {
+  await readyForJob();
+  lastFlushAttemptAt = new Date().toISOString();
+  try {
+    const queuedN = loadState().alerts.filter((a) => a.status === 'queued').length;
+    if (queuedN === 0) {
+      lastFlushResult = '예약 없음';
+      return lastFlushResult;
+    }
+    const result = await flushQueuedOrders();
+    lastFlushResult = `예약 ${result.attempted} · 체결 ${result.executed} · 남음 ${result.stillQueued} · 실패 ${result.failed.length}`;
+    console.log('[scheduler] flush queued', lastFlushResult);
+    return lastFlushResult;
+  } catch (err) {
+    lastFlushResult = err instanceof Error ? err.message : '예약 실행 실패';
+    console.error('[scheduler] flush', lastFlushResult);
+    throw err;
+  } finally {
+    await finishJob();
+  }
+}
+
 async function tickAnalysis() {
   if (!scheduleEnabled() || running) return;
   const { wd, hhmm } = kstParts();
@@ -133,21 +226,8 @@ async function tickAnalysis() {
 
   running = true;
   lastFiredKey = fireKey;
-  lastAttemptAt = new Date().toISOString();
   try {
-    try {
-      await syncFromBroker(loadState());
-    } catch (err) {
-      console.warn('[scheduler] sync', err instanceof Error ? err.message : err);
-    }
-    const result = await runDailyAnalysis(false);
-    lastResult = result.skippedReason
-      ? result.skippedReason
-      : `생성 ${result.created.length}건 / 스캔 ${result.scanned}`;
-    console.log('[scheduler] daily run', lastResult);
-  } catch (err) {
-    lastResult = err instanceof Error ? err.message : '스케줄 실행 실패';
-    console.error('[scheduler]', lastResult);
+    await runScheduledAnalysisJob();
   } finally {
     running = false;
   }
@@ -164,16 +244,8 @@ async function tickNotify() {
 
   notifying = true;
   lastNotifyFiredKey = fireKey;
-  lastNotifyAttemptAt = new Date().toISOString();
   try {
-    const result = await sendDailyConfirmReminder();
-    lastNotifyResult = result.skippedReason
-      ? result.skippedReason
-      : `알림 ${result.sent}건 (대기 ${result.pending})`;
-    console.log('[scheduler] notify', lastNotifyResult);
-  } catch (err) {
-    lastNotifyResult = err instanceof Error ? err.message : '알림 실패';
-    console.error('[scheduler] notify', lastNotifyResult);
+    await runScheduledNotifyJob();
   } finally {
     notifying = false;
   }
@@ -188,22 +260,10 @@ async function tickFlushQueued() {
   const fireKey = `${kstDayKey()}Tflush-${hhmm}`;
   if (lastFlushFiredKey === fireKey) return;
 
-  const queuedN = loadState().alerts.filter((a) => a.status === 'queued').length;
-  if (queuedN === 0) {
-    lastFlushFiredKey = fireKey;
-    return;
-  }
-
   flushing = true;
   lastFlushFiredKey = fireKey;
-  lastFlushAttemptAt = new Date().toISOString();
   try {
-    const result = await flushQueuedOrders();
-    lastFlushResult = `예약 ${result.attempted} · 체결 ${result.executed} · 남음 ${result.stillQueued} · 실패 ${result.failed.length}`;
-    console.log('[scheduler] flush queued', lastFlushResult);
-  } catch (err) {
-    lastFlushResult = err instanceof Error ? err.message : '예약 실행 실패';
-    console.error('[scheduler] flush', lastFlushResult);
+    await runScheduledFlushJob();
   } finally {
     flushing = false;
   }
@@ -217,7 +277,12 @@ async function tick() {
 
 export function startDailyScheduler() {
   if (timer) return;
-  // flush(예약 주문)는 analysis/notify 와 무관하게 항상 기동
+  if (!useInProcessScheduler()) {
+    console.log(
+      '[scheduler] in-process timer off (Cloud Scheduler / Firebase onSchedule 사용)',
+    );
+    return;
+  }
   console.log(
     `[scheduler] analysis ${scheduleEnabled() ? scheduleTimeKst() : 'off'} · notify ${
       notifyEnabled() ? notifyTimeKst() : 'off'

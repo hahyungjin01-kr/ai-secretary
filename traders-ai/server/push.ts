@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import webpush from 'web-push';
+import { FS_STATE_PATH, getDb } from './firestoreDb.js';
+import { useFirestoreBackend } from './runtime.js';
 import { loadState } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,18 +23,29 @@ interface VapidKeys {
 }
 
 let configured = false;
+let subsMemory: PushSubscriptionJSON[] | null = null;
+let subsHydrated = false;
+let subsHydratePromise: Promise<void> | null = null;
+let subsPersistChain: Promise<void> = Promise.resolve();
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function loadOrCreateVapid(): VapidKeys {
-  ensureDataDir();
   const envPub = process.env.VAPID_PUBLIC_KEY?.trim();
   const envPriv = process.env.VAPID_PRIVATE_KEY?.trim();
   if (envPub && envPriv) {
     return { publicKey: envPub, privateKey: envPriv };
   }
+
+  if (useFirestoreBackend()) {
+    throw new Error(
+      'Firestore/Cloud 모드에서는 VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY 환경변수가 필요합니다.',
+    );
+  }
+
+  ensureDataDir();
   if (fs.existsSync(VAPID_PATH)) {
     try {
       const raw = JSON.parse(fs.readFileSync(VAPID_PATH, 'utf8')) as VapidKeys;
@@ -58,20 +71,89 @@ export function getVapidPublicKey(): string {
   return loadOrCreateVapid().publicKey;
 }
 
-function loadSubs(): PushSubscriptionJSON[] {
+function readSubsFile(): PushSubscriptionJSON[] {
   ensureDataDir();
   if (!fs.existsSync(SUBS_PATH)) return [];
   try {
     const raw = JSON.parse(fs.readFileSync(SUBS_PATH, 'utf8')) as PushSubscriptionJSON[];
-    return Array.isArray(raw) ? raw.filter((s) => s?.endpoint && s?.keys?.p256dh && s?.keys?.auth) : [];
+    return Array.isArray(raw)
+      ? raw.filter((s) => s?.endpoint && s?.keys?.p256dh && s?.keys?.auth)
+      : [];
   } catch {
     return [];
   }
 }
 
-function saveSubs(subs: PushSubscriptionJSON[]) {
+function writeSubsFile(subs: PushSubscriptionJSON[]) {
   ensureDataDir();
   fs.writeFileSync(SUBS_PATH, JSON.stringify(subs, null, 2), 'utf8');
+}
+
+async function readSubsFirestore(): Promise<PushSubscriptionJSON[]> {
+  const snap = await getDb().collection(FS_STATE_PATH.collection).doc(FS_STATE_PATH.pushDoc).get();
+  if (!snap.exists) return [];
+  const raw = snap.data()?.subscriptions;
+  return Array.isArray(raw)
+    ? (raw as PushSubscriptionJSON[]).filter(
+        (s) => s?.endpoint && s?.keys?.p256dh && s?.keys?.auth,
+      )
+    : [];
+}
+
+async function writeSubsFirestore(subs: PushSubscriptionJSON[]): Promise<void> {
+  await getDb()
+    .collection(FS_STATE_PATH.collection)
+    .doc(FS_STATE_PATH.pushDoc)
+    .set({ subscriptions: subs, updatedAt: new Date().toISOString() });
+}
+
+export async function ensurePushReady(): Promise<void> {
+  if (subsHydrated && subsMemory) return;
+  if (subsHydratePromise) {
+    await subsHydratePromise;
+    return;
+  }
+  subsHydratePromise = (async () => {
+    if (useFirestoreBackend()) {
+      subsMemory = await readSubsFirestore();
+    } else {
+      subsMemory = readSubsFile();
+    }
+    subsHydrated = true;
+  })();
+  try {
+    await subsHydratePromise;
+  } finally {
+    subsHydratePromise = null;
+  }
+}
+
+function loadSubs(): PushSubscriptionJSON[] {
+  if (subsMemory) return subsMemory;
+  if (useFirestoreBackend()) {
+    throw new Error('Push store not ready — await ensurePushReady() first');
+  }
+  subsMemory = readSubsFile();
+  subsHydrated = true;
+  return subsMemory;
+}
+
+function saveSubs(subs: PushSubscriptionJSON[]) {
+  subsMemory = subs;
+  if (!useFirestoreBackend()) {
+    writeSubsFile(subs);
+    return;
+  }
+  const snapshot = structuredClone(subs);
+  subsPersistChain = subsPersistChain
+    .then(() => writeSubsFirestore(snapshot))
+    .catch((err) => {
+      console.error('[push] firestore persist failed', err);
+    });
+}
+
+export async function waitForPushPersist(): Promise<void> {
+  await subsPersistChain;
 }
 
 export function listSubscriptions(): PushSubscriptionJSON[] {
@@ -113,6 +195,7 @@ export async function sendPushToAll(payload: NotifyPayload): Promise<{
   removed: number;
 }> {
   if (!configured) initPush();
+  await ensurePushReady();
   const subs = loadSubs();
   if (subs.length === 0) return { sent: 0, failed: 0, removed: 0 };
 
@@ -145,6 +228,7 @@ export async function sendPushToAll(payload: NotifyPayload): Promise<{
 
   if (stale.length) {
     saveSubs(loadSubs().filter((s) => !stale.includes(s.endpoint)));
+    await waitForPushPersist();
   }
 
   return { sent, failed, removed: stale.length };
@@ -157,6 +241,7 @@ export async function sendDailyConfirmReminder(): Promise<{
   failed: number;
   skippedReason?: string;
 }> {
+  await ensurePushReady();
   const state = loadState();
   const pending = state.alerts.filter((a) => a.status === 'pending').length;
   const subs = loadSubs();
@@ -197,13 +282,29 @@ export function notifyEnabled(): boolean {
   return v !== '0' && v !== 'false' && v !== 'off';
 }
 
+function vapidReady(): boolean {
+  if (process.env.VAPID_PUBLIC_KEY?.trim()) return true;
+  if (!useFirestoreBackend() && fs.existsSync(VAPID_PATH)) return true;
+  try {
+    return Boolean(getVapidPublicKey());
+  } catch {
+    return false;
+  }
+}
+
 export function getNotifyInfo() {
+  let subscriptionCount = 0;
+  try {
+    subscriptionCount = loadSubs().length;
+  } catch {
+    subscriptionCount = 0;
+  }
   return {
     enabled: notifyEnabled(),
     timeKst: notifyTimeKst(),
     timezone: 'Asia/Seoul',
-    subscriptionCount: loadSubs().length,
-    vapidReady: Boolean(getVapidPublicKey()),
+    subscriptionCount,
+    vapidReady: vapidReady(),
     nextHint: notifyEnabled()
       ? `평일 ${notifyTimeKst()} KST에 휴대폰 알림`
       : '알림 스케줄 꺼짐',

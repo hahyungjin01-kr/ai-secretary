@@ -48,27 +48,36 @@ npm run dev
 - Web: http://localhost:5173
 - API: http://localhost:8787
 
-### 모바일(데이터)에서 접속 — 고정 주소
+### PC 꺼도 유지 — Firebase (권장)
+
+집 PC/Cloud Agent는 꺼지면 스케줄·푸시도 멈춥니다. **Firebase Hosting + Functions + Firestore + Scheduler**로 상시 기동합니다.
+
+```bash
+cd traders-ai
+# .firebaserc 에 프로젝트 ID 설정
+# Firebase 시크릿/파라미터 등록 (USAGE.md 참고)
+npm run deploy:firebase
+```
+
+- Hosting: UI (`https://<project>.web.app`)
+- Functions: `/api/**` + 평일 17:30 분석 / 18:00 푸시 / 09:05 예약체결
+- Firestore: 상태·푸시 구독 영속화
+- **토스 허용 IP**: Functions 출구 IP는 회전합니다. 앱의「등록할 출구 IP 보기」로 확인하거나, 고정 IP가 필요하면 VPC Connector + Cloud NAT / Docker VPS를 쓰세요.
+
+### 대안 — Docker 상시 기동 (고정 IP VPS)
+
+```bash
+cd traders-ai
+sudo bash scripts/install-always-on.sh
+# 또는
+bash scripts/run-always-on.sh
+```
+
+### 모바일(데이터)에서 접속 — 임시(개발용)
 
 ```bash
 npm run start:mobile
-# 또는 ./scripts/start-mobile.sh
 ```
-
-현재 고정 URL (ngrok):
-
-```
-https://supermom-overspend-numeric.ngrok-free.dev
-```
-
-`.env` 예시:
-
-```env
-NGROK_AUTHTOKEN=...
-NGROK_DOMAIN=supermom-overspend-numeric.ngrok-free.dev
-```
-
-ngrok이 없으면 localtunnel(`PUBLIC_TUNNEL_SUBDOMAIN`, 기본 `traders-ai-toss`)로 대체됩니다.
 
 자세한 사용법은 [USAGE.md](./USAGE.md)를 보세요.
 
@@ -77,9 +86,10 @@ ngrok이 없으면 localtunnel(`PUBLIC_TUNNEL_SUBDOMAIN`, 기본 `traders-ai-tos
 - `GET /api/dashboard`
 - `GET /api/broker/status`
 - `POST /api/broker/sync`
-- `POST /api/broker/live` — `{ arm, confirm: "LIVE" }`
+- `POST /api/broker/live`
 - `POST /api/daily/run`
-- `POST /api/alerts/:id/act` — `{ amount, action }`
+- `POST /api/alerts/:id/act` — `{ amount, action, confirm }`
+- `POST /api/alerts/confirm-all` — `{ confirm: "최종확인" }`
 
 ## 면책
 

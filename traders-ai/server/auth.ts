@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RequestHandler } from 'express';
+import { useFirestoreBackend } from './runtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../data');
@@ -14,10 +15,16 @@ function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-/** .env TRADERS_API_SECRET 또는 data/api-secret.json (자동 생성) */
+/** .env TRADERS_API_SECRET 또는 data/api-secret.json (자동 생성). Cloud는 env 필수. */
 export function getApiSecret(): string {
   const fromEnv = process.env.TRADERS_API_SECRET?.trim();
   if (fromEnv) return fromEnv;
+
+  if (useFirestoreBackend()) {
+    throw new Error(
+      'Cloud/Firestore 모드에서는 TRADERS_API_SECRET 환경변수가 필요합니다.',
+    );
+  }
 
   ensureDataDir();
   if (fs.existsSync(SECRET_PATH)) {
@@ -45,8 +52,16 @@ export function extractApiSecret(req: {
 }
 
 export function requireApiSecret(): RequestHandler {
-  const expected = getApiSecret();
   return (req, res, next) => {
+    let expected: string;
+    try {
+      expected = getApiSecret();
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'API 시크릿 설정 오류',
+      });
+      return;
+    }
     const got = extractApiSecret(req);
     if (!got || got !== expected) {
       res.status(401).json({

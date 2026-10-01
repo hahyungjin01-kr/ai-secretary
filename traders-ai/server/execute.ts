@@ -272,7 +272,11 @@ export async function actOnAlert(
   // 예약 실행(fromQueue)은 사용자가 이미 확인했으므로 악마의 변호인을 더 완화
   const reviseLog: string[] = [];
   const maxRevise = opts.fromQueue ? 4 : 3;
-  for (let round = 0; !gate.allow && (gate.revisable || opts.fromQueue) && round < maxRevise; round++) {
+  for (
+    let reviseRound = 0;
+    !gate.allow && (gate.revisable || opts.fromQueue) && reviseRound < maxRevise;
+    reviseRound++
+  ) {
     if (gate.hardDeny && !opts.fromQueue) break;
     if (isSessionHardDeny(gate) && opts.fromQueue) {
       // 아직 장 시작 전 — 예약 유지
@@ -282,7 +286,7 @@ export async function actOnAlert(
       return { state, alert };
     }
     const hints: MoARevisionHints = {
-      round: round + 1,
+      round: reviseRound + 1,
       reasons: gate.reviseReasons.length ? gate.reviseReasons : gate.blockReasons,
       forceSizeFactor: Math.max(0.25, gate.sizeFactor * (opts.fromQueue ? 0.65 : 0.75)),
       softenDevilVeto: true,
@@ -290,7 +294,7 @@ export async function actOnAlert(
     };
     const revised = runMixtureOfAgents(research, mode, heldShares, hints);
     reviseLog.push(
-      `재분석#${round + 1}: ${revised.moaSummary} ← ${gate.reviseReasons.slice(0, 1).join('')}`,
+      `재분석#${reviseRound + 1}: ${revised.moaSummary} ← ${gate.reviseReasons.slice(0, 1).join('')}`,
     );
 
     if (!revised.passedGate || revised.side === 'hold') {
@@ -305,7 +309,7 @@ export async function actOnAlert(
           Math.max(0.35, revised.sizeFactor * 0.8),
       );
       alert.moaSummary = `${alert.moaSummary ?? ''} · 재분석 사이드변경 무시(${revised.side})·사이즈만 조정`;
-      reviseLog.push(`재분석#${round + 1}: 사이드 변경 거부 (확인=${alert.side})`);
+      reviseLog.push(`재분석#${reviseRound + 1}: 사이드 변경 거부 (확인=${alert.side})`);
     } else {
       alert.score = revised.score;
       alert.entry = revised.entry;

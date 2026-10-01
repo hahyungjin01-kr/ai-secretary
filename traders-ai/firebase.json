@@ -1,0 +1,61 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "functions": [
+    {
+      "source": ".",
+      "codebase": "traders-ai",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "src",
+        "public",
+        "data",
+        "scripts",
+        "dist",
+        "*.md",
+        ".env",
+        ".env.*",
+        "Dockerfile",
+        "docker-compose.yml",
+        ".dockerignore",
+        "vitest.config.ts",
+        "vite.config.ts",
+        "tsconfig.app.json",
+        "index.html",
+        "server/**/*.test.ts"
+      ],
+      "predeploy": [
+        "npm run build:functions"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "function": {
+          "functionId": "api",
+          "region": "asia-northeast3"
+        }
+      }
+    ],
+    "headers": [
+      {
+        "source": "/sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  }
+}

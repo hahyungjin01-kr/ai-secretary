@@ -37,11 +37,14 @@ export async function resolveSymbol(query: string): Promise<string> {
   }
 
   const search = await yahooFinance.search(q);
+  const quotes = (search?.quotes ?? []) as Array<{
+    quoteType?: string;
+    symbol?: string;
+  }>;
   const match =
-    search?.quotes?.find(
-      (x: { quoteType?: string; symbol?: string }) =>
-        x.symbol && (x.quoteType === 'EQUITY' || x.quoteType === 'ETF'),
-    ) ?? search?.quotes?.[0];
+    quotes.find(
+      (x) => x.symbol && (x.quoteType === 'EQUITY' || x.quoteType === 'ETF'),
+    ) ?? quotes[0];
 
   if (!match?.symbol) {
     throw new Error(`종목을 찾지 못했습니다: ${q}`);
@@ -88,8 +91,8 @@ export async function collectResearch(inputSymbol: string): Promise<ResearchBund
   }
 
   const candles: Candle[] = (historical ?? [])
-    .filter((h) => h.close != null)
-    .map((h) => ({
+    .filter((h: { close?: number | null }) => h.close != null)
+    .map((h: { date: Date | string | number; open?: number; high?: number; low?: number; close?: number; volume?: number }) => ({
       date: new Date(h.date).toISOString().slice(0, 10),
       open: Number(h.open),
       high: Number(h.high),

@@ -1,0 +1,16 @@
+node_modules
+.git
+src
+public
+data
+scripts
+dist
+*.md
+.env
+.env.*
+firebase-debug.log
+.firebaserc.local
+server/**/*.test.ts
+coverage
+.vscode
+.idea

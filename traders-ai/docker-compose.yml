@@ -1,0 +1,49 @@
+# Traders AI — PC가 꺼져도 돌아가는 상시 서버
+# 사용: docker compose up -d --build
+# 중지: docker compose down
+
+services:
+  app:
+    build: .
+    container_name: traders-ai-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      DAILY_SCHEDULE_ENABLED: ${DAILY_SCHEDULE_ENABLED:-1}
+      DAILY_RUN_TIME_KST: ${DAILY_RUN_TIME_KST:-17:30}
+      DAILY_SCHEDULE_WEEKDAYS_ONLY: ${DAILY_SCHEDULE_WEEKDAYS_ONLY:-1}
+      NOTIFY_SCHEDULE_ENABLED: ${NOTIFY_SCHEDULE_ENABLED:-1}
+      NOTIFY_TIME_KST: ${NOTIFY_TIME_KST:-18:00}
+      EXECUTE_QUEUED_TIME_KST: ${EXECUTE_QUEUED_TIME_KST:-09:05}
+    # ngrok reaches app via Docker network (app:8787).
+    # Host bind: PUBLISH_HOST_PORT=8787 docker compose --profile tunnel up -d
+    ports:
+      - "${PUBLISH_HOST_PORT:-127.0.0.1:8787}:8787"
+    volumes:
+      # 상태·VAPID·푸시 구독·API 시크릿 영속화
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  tunnel:
+    image: ngrok/ngrok:latest
+    container_name: traders-ai-tunnel
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command:
+      - http
+      - --domain=${NGROK_DOMAIN}
+      - app:8787
+    profiles:
+      - tunnel
