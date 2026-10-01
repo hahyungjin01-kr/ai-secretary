@@ -163,21 +163,51 @@ export function setAccessToken(token: string) {
 }
 
 function authHeaders(json = true): HeadersInit {
-  const h: Record<string, string> = {};
+  const h: Record<string, string> = {
+    // ngrok 무료 안내 HTML이 API 응답을 가로채지 않게 함
+    'ngrok-skip-browser-warning': 'true',
+  };
   if (json) h['Content-Type'] = 'application/json';
   const t = getAccessToken();
   if (t) h['X-Traders-Token'] = t;
   return h;
 }
 
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new Error(
+      '서버에 연결하지 못했습니다. 주소/터널을 확인하거나, 접속 토큰을 저장했는지 보세요.',
+    );
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || '요청 실패');
+  let data: { error?: string } = {};
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(
+      res.status === 401
+        ? '접속 토큰이 필요합니다. 화면에 TRADERS_AI_TOKEN을 저장하세요.'
+        : '서버 응답을 읽지 못했습니다. 페이지를 새로고침 후 다시 시도하세요.',
+    );
+  }
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        data?.error ||
+          '접속 토큰이 필요합니다. .env의 TRADERS_AI_TOKEN을 복사해 저장하세요.',
+      );
+    }
+    throw new Error(data?.error || '요청 실패');
+  }
   return data as T;
 }
 
 export async function fetchDashboard(): Promise<Dashboard> {
-  return parse(await fetch('/api/dashboard'));
+  return parse(await apiFetch('/api/dashboard', { headers: authHeaders(false) }));
 }
 
 export async function updateSettings(body: {
@@ -188,7 +218,7 @@ export async function updateSettings(body: {
   preferBroker?: boolean;
 }): Promise<Dashboard> {
   return parse(
-    await fetch('/api/settings', {
+    await apiFetch('/api/settings', {
       method: 'PATCH',
       headers: authHeaders(),
       body: JSON.stringify(body),
@@ -198,7 +228,7 @@ export async function updateSettings(body: {
 
 export async function runDaily(force = false): Promise<Dashboard> {
   return parse(
-    await fetch('/api/daily/run', {
+    await apiFetch('/api/daily/run', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ force }),
@@ -216,7 +246,7 @@ export async function actOnAlert(
   if (amount !== undefined) body.amount = amount;
   if (confirm !== undefined) body.confirm = confirm;
   return parse(
-    await fetch(`/api/alerts/${id}/act`, {
+    await apiFetch(`/api/alerts/${id}/act`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(body),
@@ -232,7 +262,7 @@ export async function confirmAllPending(): Promise<
   }
 > {
   return parse(
-    await fetch('/api/alerts/confirm-all', {
+    await apiFetch('/api/alerts/confirm-all', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ confirm: '최종확인' }),
@@ -242,7 +272,7 @@ export async function confirmAllPending(): Promise<
 
 export async function syncBroker(): Promise<Dashboard> {
   return parse(
-    await fetch('/api/broker/sync', {
+    await apiFetch('/api/broker/sync', {
       method: 'POST',
       headers: authHeaders(),
       body: '{}',
@@ -252,7 +282,7 @@ export async function syncBroker(): Promise<Dashboard> {
 
 export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashboard> {
   return parse(
-    await fetch('/api/broker/live', {
+    await apiFetch('/api/broker/live', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ arm, confirm }),
