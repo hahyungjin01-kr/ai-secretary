@@ -1,13 +1,15 @@
 # Traders AI
 
-모드 기반 **일일 자동 분석 → 알림 → 금액 입력 → 토스증권 주문** 앱입니다.
+모드 기반 **AI 일일 종목 선정 → 알림 → 금액 확인 → 토스증권 주문** 앱입니다.
+
+> 사용법 전체는 **[USAGE.md](./USAGE.md)** 를 보세요.
 
 ## 제품 흐름
 
 1. **모드 선택**: 안전형 / 밸런스형 / 수익형
-2. **매일 자동 분석**: 관심종목 시세·차트·거래량·뉴스 조사
-3. **알림**: “얼마를 투자할까요?” / “얼마를 매도할까요?”
-4. **실행**: 금액 입력 → 모드 한도 안에서 수량 결정 → **토스증권 주문**
+2. **AI 일일 선정**: 관심종목 없이 AI가 종목·투자방식을 고름
+3. **알림**: 추천 금액·진입/손절/목표·투자 방식 제시
+4. **실행**: 금액 확인 → 모드 한도 안에서 수량 결정 → **토스증권 주문**
 
 키가 없거나 LIVE가 꺼져 있으면 로컬 모의체결로 동작합니다.
 
@@ -51,25 +53,26 @@ npm run dev
 ### 모바일(데이터)에서 접속 — 고정 주소
 
 ```bash
-./scripts/start-mobile.sh
+npm run start:mobile
+# 또는 ./scripts/start-mobile.sh
 ```
 
-기본 고정 URL:
+현재 고정 URL (ngrok):
 
 ```
-https://traders-ai-toss.loca.lt
+https://supermom-overspend-numeric.ngrok-free.dev
 ```
 
-서브도메인은 `.env`의 `PUBLIC_TUNNEL_SUBDOMAIN`으로 바꿀 수 있습니다.
-
-더 안정적으로 고정하려면 [ngrok](https://dashboard.ngrok.com) 무료 가입 후:
+`.env` 예시:
 
 ```env
 NGROK_AUTHTOKEN=...
-NGROK_DOMAIN=xxxx.ngrok-free.app
+NGROK_DOMAIN=supermom-overspend-numeric.ngrok-free.dev
 ```
 
-다시 `./scripts/start-mobile.sh` 실행하면 됩니다.
+ngrok이 없으면 localtunnel(`PUBLIC_TUNNEL_SUBDOMAIN`, 기본 `traders-ai-toss`)로 대체됩니다.
+
+자세한 사용법은 [USAGE.md](./USAGE.md)를 보세요.
 
 ## API
 
