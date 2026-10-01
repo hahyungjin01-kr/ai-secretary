@@ -313,6 +313,10 @@ button.primary.big {
   font-size: 0.9rem;
 }
 
+.schedule-hint {
+  margin: 0.25rem 0 0.5rem;
+}
+
 .risk-metrics {
   margin: 0.75rem 0;
 }

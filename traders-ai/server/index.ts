@@ -16,6 +16,7 @@ import {
   unlockLiveTrading,
   lockLiveTrading,
 } from './risk.js';
+import { getScheduleInfo, startDailyScheduler } from './scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -91,10 +92,11 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     liveArmedAt: state.liveArmedAt,
     paperTrading,
     risk,
+    schedule: getScheduleInfo(),
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer:
-      '수익을 보장하지 않습니다. 일손실 킬스위치·최종 확인 후에만 주문이 나갑니다. 손익은 사용자 책임입니다.',
+      '수익을 보장하지 않습니다. 평일 정해진 시각에 AI가 제안을 만들고, 최종 확인 후에만 주문이 나갑니다.',
   };
 }
 
@@ -423,4 +425,5 @@ app.listen(PORT, HOST, () => {
       ? 'API guard: TRADERS_AI_TOKEN required on mutating routes'
       : 'API guard: TRADERS_AI_TOKEN not set (open mutating routes — set token for public URL)',
   );
+  startDailyScheduler();
 });

@@ -3,17 +3,20 @@
 수익을 보장하지 않습니다.
 
 ## 흐름
-1. 잔고 새로고침
-2. AI에게 맡기기
-3. 빼기만 하고 **최종 확인** 한 번
+1. **평일 08:55 KST**에 AI가 자동으로 종목 제안 생성
+2. 앱에서 목록 확인 · 빼기
+3. **최종 확인** 한 번 → 주문
+
+## 스케줄 설정 (`.env`)
+```env
+DAILY_SCHEDULE_ENABLED=1
+DAILY_RUN_TIME_KST=08:55
+DAILY_SCHEDULE_WEEKDAYS_ONLY=1
+```
 
 ## 안전장치
-- **일손실 킬스위치:** 당일 한도 초과 시 신규 매수 잠금
-- **연속 손실 잠금:** 손실 매도 N회 연속 시 당일 매수 잠금
-- **장외·괴리·자금** soft-deny → 분석 MoA 재실행 / 장외만 하드 차단
-- 접속 토큰(`TRADERS_AI_TOKEN`)이 있으면 앱에 저장
-
-## 접속
-- 모바일: https://supermom-overspend-numeric.ngrok-free.dev
+- 일손실 킬스위치 / 연속 손실 시 매수 잠금
+- 장외는 하드 차단
+- `TRADERS_AI_TOKEN` 있으면 앱에 저장
 
 손익은 사용자 책임입니다.

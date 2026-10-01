@@ -145,6 +145,15 @@ export interface Dashboard {
     lockReason: string | null;
     message: string;
   };
+  schedule?: {
+    enabled: boolean;
+    timeKst: string;
+    timezone: string;
+    weekdaysOnly: boolean;
+    lastAttemptAt: string | null;
+    lastResult: string | null;
+    nextHint: string;
+  };
   broker: BrokerStatus;
   disclaimer: string;
   accessTokenRequired?: boolean;

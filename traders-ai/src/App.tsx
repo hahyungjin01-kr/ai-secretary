@@ -4,7 +4,6 @@ import {
   confirmAllPending,
   fetchDashboard,
   getAccessToken,
-  runDaily,
   setAccessToken,
   syncBroker,
   updateSettings,
@@ -120,7 +119,6 @@ function ProposalCard({
 export default function App() {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +137,14 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [refresh]);
 
+  // 스케줄 결과 반영용 주기 갱신
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refresh().catch(() => undefined);
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [refresh]);
+
   const pending = (dash?.pendingAlerts ?? []).filter((a) => a.status === 'pending');
   const pendingTotal = pending.reduce((s, a) => s + (a.suggestedAmount || 0), 0);
 
@@ -149,34 +155,6 @@ export default function App() {
       setNotice(`${MODE_LABEL[mode]}로 바꿨습니다.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : '모드 변경 실패');
-    }
-  }
-
-  async function onScan() {
-    setScanning(true);
-    setError(null);
-    setNotice(null);
-    try {
-      try {
-        await syncBroker();
-      } catch {
-        // 키 없으면 로컬로 진행
-      }
-      const data = await runDaily(true);
-      setDash(data);
-      if (data.skippedReason) setNotice(data.skippedReason);
-      else {
-        const n = data.createdCount ?? 0;
-        setNotice(
-          n > 0
-            ? `AI가 ${n}건을 골랐습니다. 빼기만 하고 「최종 확인」을 누르세요.`
-            : '오늘은 살 만한 종목이 없습니다.',
-        );
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '분석 실패');
-    } finally {
-      setScanning(false);
     }
   }
 
@@ -287,8 +265,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>알아서 투자합니다</h1>
             <p>
-              AI가 종목을 고르면 <strong>최종 확인</strong> 한 번으로 실행합니다. 수익은 보장되지
-              않으며, 일손실 한도·연속손실 잠금이 적용됩니다.
+              평일 정해진 시각에 AI가 제안을 만들고, <strong>최종 확인</strong> 한 번으로
+              실행합니다. 수익은 보장되지 않습니다.
             </p>
           </div>
 
@@ -303,10 +281,17 @@ export default function App() {
             </div>
           </div>
 
+          {dash.schedule && (
+            <p className="hint schedule-hint">
+              {dash.schedule.nextHint}
+              {dash.schedule.lastResult ? ` · 최근: ${dash.schedule.lastResult}` : ''}
+              {dash.lastDailyRunAt
+                ? ` · 분석 ${new Date(dash.lastDailyRunAt).toLocaleString('ko-KR')}`
+                : ''}
+            </p>
+          )}
+
           <div className="hero-actions">
-            <button type="button" className="primary big" disabled={scanning} onClick={onScan}>
-              {scanning ? 'AI가 고르는 중…' : 'AI에게 맡기기'}
-            </button>
             <button
               type="button"
               className="ghost"
@@ -432,7 +417,10 @@ export default function App() {
           </div>
 
           {pending.length === 0 ? (
-            <p className="empty">대기 중인 주문이 없습니다. 「AI에게 맡기기」를 누르세요.</p>
+            <p className="empty">
+              대기 중인 주문이 없습니다. 평일 {dash.schedule?.timeKst ?? '08:55'} KST에 자동으로
+              분석됩니다.
+            </p>
           ) : (
             <>
               <p className="hint">
