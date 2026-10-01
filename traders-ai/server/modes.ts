@@ -24,7 +24,7 @@ export const MODE_PROFILES: Record<TraderMode, ModeProfile> = {
   safe: {
     id: 'safe',
     label: '안전형',
-    description: 'AI가 대형·급락반등 위주로 고르고, 손실 한도를 좁힙니다.',
+    description: '보수적으로, 계좌 현금의 일부만 씁니다.',
     riskPercent: 0.75,
     maxPositionPct: 12,
     minRewardRisk: 2,
@@ -36,7 +36,7 @@ export const MODE_PROFILES: Record<TraderMode, ModeProfile> = {
   balance: {
     id: 'balance',
     label: '밸런스형',
-    description: 'AI가 수급·완만한 모멘텀을 섞어 고릅니다.',
+    description: '중간 비중으로 알아서 투자합니다.',
     riskPercent: 1.5,
     maxPositionPct: 22,
     minRewardRisk: 1.5,
@@ -48,7 +48,7 @@ export const MODE_PROFILES: Record<TraderMode, ModeProfile> = {
   profit: {
     id: 'profit',
     label: '수익형',
-    description: 'AI가 급등·거래량 모멘텀을 공격적으로 고릅니다.',
+    description: '공격적으로, 여유 현금을 더 씁니다.',
     riskPercent: 3,
     maxPositionPct: 35,
     minRewardRisk: 1.2,

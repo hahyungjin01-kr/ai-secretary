@@ -101,6 +101,13 @@ input {
   font-weight: 650;
 }
 
+.badge.ok {
+  border-color: rgba(11, 110, 79, 0.4);
+  background: rgba(11, 110, 79, 0.1);
+  color: var(--teal);
+  font-weight: 650;
+}
+
 .setup-steps {
   margin: 0.25rem 0 0;
   padding-left: 1.2rem;
@@ -154,6 +161,11 @@ button.primary.danger {
   padding: 1.5rem 0 0.25rem;
 }
 
+.simple-hero {
+  gap: 1.1rem;
+  animation: fade-up 480ms ease both;
+}
+
 .hero-copy h1 {
   margin: 0 0 0.7rem;
   font-family: Syne, 'IBM Plex Sans', sans-serif;
@@ -168,6 +180,68 @@ button.primary.danger {
   color: var(--muted);
   max-width: 56ch;
   font-size: 1.02rem;
+}
+
+.hero-cash {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem 2.5rem;
+  animation: fade-up 560ms ease both;
+}
+
+.hero-cash span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.hero-cash strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: Syne, 'IBM Plex Sans', sans-serif;
+  font-size: clamp(1.35rem, 3vw, 1.85rem);
+  letter-spacing: -0.02em;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  animation: fade-up 640ms ease both;
+}
+
+button.primary.big {
+  min-height: 3rem;
+  padding: 0.75rem 1.4rem;
+  font-size: 1.05rem;
+}
+
+.mode-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.mode-inline select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.4rem 0.65rem;
+  color: var(--ink);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .mode-grid {

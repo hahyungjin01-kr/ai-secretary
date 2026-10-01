@@ -32,7 +32,9 @@ function suggestedBuyAmount(state: AppState, price: number, stop: number): {
   const minCashReserve = (equity * mode.minCashPct) / 100;
   const spendable = Math.max(0, state.cash - minCashReserve);
   const max = round(Math.min(maxByPosition, spendable, byRisk || spendable));
-  const suggested = round(Math.min(max, max * (mode.id === 'profit' ? 0.85 : 0.65)));
+  // 계좌 여유 현금을 최대한 쓰되, 모드 한도 안에서 제안
+  const usePct = mode.id === 'safe' ? 0.8 : mode.id === 'balance' ? 0.9 : 0.95;
+  const suggested = round(Math.min(max, max * usePct));
   return { suggested: Math.max(0, suggested), max: Math.max(0, max) };
 }
 

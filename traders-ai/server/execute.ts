@@ -130,8 +130,8 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
 }
 
 /**
- * 사용자가 금액만 입력하면, 모드 규칙 + 현재가로 수량/체결을 시스템이 결정합니다.
- * 토스증권 키가 있고 LIVE가 켜져 있으면 실주문, 없으면 로컬 모의체결합니다.
+ * 사용자가 「허락」하면 AI 추천 금액으로 체결합니다.
+ * 토스 연동 중이면 허락 = 그 건 실주문 승인입니다.
  */
 export async function actOnAlert(
   alertId: string,
@@ -146,7 +146,7 @@ export async function actOnAlert(
   if (action === 'skip') {
     alert.status = 'skipped';
     alert.actedAt = new Date().toISOString();
-    alert.executionNote = '사용자가 건너뜀';
+    alert.executionNote = '사용자가 거절함';
     saveState(state);
     return { state, alert };
   }
@@ -155,7 +155,7 @@ export async function actOnAlert(
   try {
     state = await syncFromBroker(state);
   } catch (err) {
-    if (state.preferBroker && getBroker(state.liveTradingArmed)) {
+    if (state.preferBroker && getBroker(true)) {
       throw new ExecuteError(
         `브로커 동기화 실패: ${err instanceof Error ? err.message : 'unknown'}`,
       );
@@ -172,7 +172,9 @@ export async function actOnAlert(
     newsTitles: research.news.slice(0, 3).map((n) => n.title),
   };
 
-  const fillAmount = clampAmount(alert, amount, state);
+  // 금액 미입력/0이면 AI 추천 금액 사용
+  const requested = Number.isFinite(amount) && amount > 0 ? amount : alert.suggestedAmount;
+  const fillAmount = clampAmount(alert, requested, state);
   const price = research.price;
   let shares = 0;
 
@@ -186,16 +188,21 @@ export async function actOnAlert(
     if (shares <= 0 || fillAmount >= alert.maxAmount * 0.95) shares = existing.shares;
   }
 
-  const broker = state.preferBroker ? getBroker(state.liveTradingArmed) : null;
+  // 허락 = 실주문 승인 (별도 LIVE 아밍 불필요)
+  const brokerReady = Boolean(state.preferBroker && getBroker(true));
+  if (brokerReady) {
+    state.liveTradingArmed = true;
+    state.liveArmedAt = state.liveArmedAt ?? new Date().toISOString();
+  }
+
+  const broker = brokerReady ? getBroker(true) : null;
   let venue: TradeRecord['venue'] = 'local-paper';
   let brokerOrderId: string | undefined;
   let brokerStatus: string | undefined;
   let fillPrice = price;
   let note = '';
 
-  const canLiveOrder = Boolean(broker && state.liveTradingArmed);
-
-  if (canLiveOrder && broker) {
+  if (broker) {
     try {
       const order = await broker.placeOrder({
         symbol: alert.symbol,
@@ -214,7 +221,7 @@ export async function actOnAlert(
       if (order.filledQty > 0) shares = order.filledQty;
 
       state = await syncFromBroker(state);
-      note = `${MODE_PROFILES[state.mode].label} · 토스증권 주문 ${shares}주 (${order.status})`;
+      note = `허락 승인 · 토스증권 ${alert.side === 'buy' ? '매수' : '매도'} ${shares}주 (${order.status})`;
     } catch (err) {
       const msg = err instanceof BrokerError || err instanceof Error ? err.message : '주문 실패';
       throw new ExecuteError(`토스 주문 실패: ${msg}`);
@@ -225,9 +232,7 @@ export async function actOnAlert(
     } else {
       shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
     }
-    note = broker
-      ? `${MODE_PROFILES[state.mode].label} · 실주문 잠금 상태라 로컬 모의로 ${shares}주 체결`
-      : `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'} 체결 (로컬 모의)`;
+    note = `허락 승인 · 로컬 모의 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'}`;
   }
 
   const trade: TradeRecord = {

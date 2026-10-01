@@ -174,14 +174,16 @@ export async function runDaily(force = false): Promise<Dashboard> {
 
 export async function actOnAlert(
   id: string,
-  amount: number,
+  amount?: number,
   action: 'execute' | 'skip' = 'execute',
 ): Promise<Dashboard> {
+  const body: { action: 'execute' | 'skip'; amount?: number } = { action };
+  if (amount !== undefined) body.amount = amount;
   return parse(
     await fetch(`/api/alerts/${id}/act`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, action }),
+      body: JSON.stringify(body),
     }),
   );
 }

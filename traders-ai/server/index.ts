@@ -68,10 +68,8 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer: usingBroker
-      ? state.liveTradingArmed
-        ? '토스증권 실주문이 활성화되어 있습니다. 실제 손실이 발생할 수 있습니다.'
-        : '토스증권 계좌는 연결됐지만 실주문은 잠겨 있습니다. LIVE 확인 후에만 토스로 주문됩니다.'
-      : '로컬 모의투자 엔진입니다. .env에 토스 Open API 키를 넣으면 계좌 연동이 가능합니다.',
+      ? '토스증권 계좌 현금으로 AI가 종목을 고릅니다. 매수/매도는 「허락」을 누를 때만 실행됩니다.'
+      : '로컬 모의투자입니다. .env에 토스 Open API 키를 넣으면 실계좌로 연동됩니다.',
   };
 }
 
@@ -264,7 +262,11 @@ app.post('/api/daily/run', async (req, res) => {
 app.post('/api/alerts/:id/act', async (req, res) => {
   try {
     const action = req.body?.action === 'skip' ? 'skip' : 'execute';
-    const amount = Number(req.body?.amount ?? 0);
+    // amount 생략 시 AI 추천 금액 사용
+    const amount =
+      req.body?.amount === undefined || req.body?.amount === null || req.body?.amount === ''
+        ? 0
+        : Number(req.body.amount);
     const result = await actOnAlert(req.params.id, amount, action);
     const marks = await markPrices(result.state);
     res.json({
