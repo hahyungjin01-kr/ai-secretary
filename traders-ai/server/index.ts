@@ -80,7 +80,9 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
         : 0,
     positions: positionMarks,
     alerts: state.alerts,
-    pendingAlerts: state.alerts.filter((a) => a.status === 'pending' || a.status === 'executing'),
+    pendingAlerts: state.alerts.filter(
+      (a) => a.status === 'pending' || a.status === 'queued' || a.status === 'executing',
+    ),
     approvePhrase: APPROVE_PHRASE,
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
@@ -393,8 +395,8 @@ app.post('/api/alerts/confirm-all', async (req, res) => {
       failed,
       notice:
         failed.length === 0
-          ? `${confirmedCount}건 최종 확인·주문 완료`
-          : `${confirmedCount}건 성공, ${failed.length}건 실패(재분석/장외 등)`,
+          ? `${confirmedCount}건 처리 (장외면 다음 장 예약, 장중이면 즉시 주문)`
+          : `${confirmedCount}건 성공/예약, ${failed.length}건 실패`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : '최종 확인 실패';

@@ -1,4 +1,4 @@
-import { syncFromBroker } from './execute.js';
+import { flushQueuedOrders, syncFromBroker } from './execute.js';
 import { runDailyAnalysis } from './daily.js';
 import { loadState } from './store.js';
 import {
@@ -20,6 +20,12 @@ export interface ScheduleInfo {
     lastAttemptAt: string | null;
     lastResult: string | null;
   };
+  executeQueued?: {
+    timeKst: string;
+    lastAttemptAt: string | null;
+    lastResult: string | null;
+    nextHint: string;
+  };
 }
 
 let lastAttemptAt: string | null = null;
@@ -30,9 +36,14 @@ let lastNotifyAttemptAt: string | null = null;
 let lastNotifyResult: string | null = null;
 let lastNotifyFiredKey: string | null = null;
 
+let lastFlushAttemptAt: string | null = null;
+let lastFlushResult: string | null = null;
+let lastFlushFiredKey: string | null = null;
+
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 let notifying = false;
+let flushing = false;
 
 function scheduleEnabled(): boolean {
   const v = String(process.env.DAILY_SCHEDULE_ENABLED ?? '1').toLowerCase();
@@ -96,7 +107,19 @@ export function getScheduleInfo(): ScheduleInfo {
       lastAttemptAt: lastNotifyAttemptAt,
       lastResult: lastNotifyResult,
     },
+    executeQueued: {
+      timeKst: executeQueuedTimeKst(),
+      lastAttemptAt: lastFlushAttemptAt,
+      lastResult: lastFlushResult,
+      nextHint: `예약 주문은 평일 ${executeQueuedTimeKst()} KST에 자동 실행`,
+    },
   };
+}
+
+/** 장 시작 직후 — 전일 장외 최종확인 예약분 실행 */
+export function executeQueuedTimeKst(): string {
+  const raw = (process.env.EXECUTE_QUEUED_TIME_KST || '09:05').trim();
+  return /^\d{1,2}:\d{2}$/.test(raw) ? raw.padStart(5, '0') : '09:05';
 }
 
 async function tickAnalysis() {
@@ -156,7 +179,38 @@ async function tickNotify() {
   }
 }
 
+async function tickFlushQueued() {
+  if (flushing) return;
+  const { wd, hhmm } = kstParts();
+  if (weekdaysOnly() && (wd === 'Sat' || wd === 'Sun')) return;
+  if (hhmm !== executeQueuedTimeKst()) return;
+
+  const fireKey = `${kstDayKey()}Tflush-${hhmm}`;
+  if (lastFlushFiredKey === fireKey) return;
+
+  const queuedN = loadState().alerts.filter((a) => a.status === 'queued').length;
+  if (queuedN === 0) {
+    lastFlushFiredKey = fireKey;
+    return;
+  }
+
+  flushing = true;
+  lastFlushFiredKey = fireKey;
+  lastFlushAttemptAt = new Date().toISOString();
+  try {
+    const result = await flushQueuedOrders();
+    lastFlushResult = `예약 ${result.attempted} · 체결 ${result.executed} · 남음 ${result.stillQueued} · 실패 ${result.failed.length}`;
+    console.log('[scheduler] flush queued', lastFlushResult);
+  } catch (err) {
+    lastFlushResult = err instanceof Error ? err.message : '예약 실행 실패';
+    console.error('[scheduler] flush', lastFlushResult);
+  } finally {
+    flushing = false;
+  }
+}
+
 async function tick() {
+  await tickFlushQueued();
   await tickAnalysis();
   await tickNotify();
 }
@@ -170,7 +224,7 @@ export function startDailyScheduler() {
   console.log(
     `[scheduler] analysis ${scheduleEnabled() ? scheduleTimeKst() : 'off'} · notify ${
       notifyEnabled() ? notifyTimeKst() : 'off'
-    } KST weekdays`,
+    } · flush-queued ${executeQueuedTimeKst()} KST weekdays`,
   );
   void tick();
   timer = setInterval(() => {

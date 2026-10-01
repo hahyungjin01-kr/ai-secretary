@@ -38,7 +38,11 @@ function ProposalCard({
   confirmingAll: boolean;
   onDeny: (alert: DailyAlert) => void;
 }) {
-  const busy = busyId === alert.id || alert.status === 'executing' || confirmingAll;
+  const busy =
+    busyId === alert.id ||
+    alert.status === 'executing' ||
+    alert.status === 'queued' ||
+    confirmingAll;
   const isBuy = alert.side === 'buy';
 
   return (
@@ -48,9 +52,11 @@ function ProposalCard({
           <p className="alert-kicker">
             {alert.status === 'executing'
               ? '주문 처리 중'
-              : isBuy
-                ? '매수 제안'
-                : '매도 제안'}
+              : alert.status === 'queued'
+                ? '다음 장 예약됨'
+                : isBuy
+                  ? '매수 제안'
+                  : '매도 제안'}
           </p>
           <h3>
             {alert.name} <span>{alert.symbol}</span>
@@ -102,6 +108,12 @@ function ProposalCard({
             </p>
           )}
         </div>
+      )}
+
+      {alert.status === 'queued' && (
+        <p className="hint">
+          {alert.executionNote ?? '최종확인됨 · 다음 정규장에 자동 주문'}
+        </p>
       )}
 
       <footer>
@@ -183,6 +195,7 @@ export default function App() {
   }, [loading, dash]);
 
   const pending = (dash?.pendingAlerts ?? []).filter((a) => a.status === 'pending');
+  const queued = (dash?.pendingAlerts ?? []).filter((a) => a.status === 'queued');
   const pendingTotal = pending.reduce((s, a) => s + (a.suggestedAmount || 0), 0);
 
   async function onMode(mode: TraderMode) {
@@ -207,8 +220,8 @@ export default function App() {
       setNotice(
         data.notice ??
           (failN
-            ? `${data.confirmedCount ?? 0}건 성공, ${failN}건 실패`
-            : `${data.confirmedCount ?? 0}건 최종 확인 완료`),
+            ? `${data.confirmedCount ?? 0}건 성공/예약, ${failN}건 실패`
+            : `${data.confirmedCount ?? 0}건 최종 확인 (장외면 다음 장 예약)`),
       );
       if (failN > 0 && data.failed?.[0]) {
         setError(data.failed.map((f) => `${f.symbol}: ${f.error}`).slice(0, 2).join(' · '));
@@ -508,9 +521,17 @@ export default function App() {
             <div>
               <h2>오늘의 제안</h2>
               <p>
-                {pending.length === 0
+                {pending.length === 0 && queued.length === 0
                   ? '대기 없음'
-                  : `${pending.length}건 · 합계 약 ${money(pendingTotal, dash.currency)}`}
+                  : [
+                      pending.length ? `확인 대기 ${pending.length}건` : null,
+                      queued.length ? `장 예약 ${queued.length}건` : null,
+                      pending.length
+                        ? `합계 약 ${money(pendingTotal, dash.currency)}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
               </p>
             </div>
             <div className="controls-actions">
@@ -521,15 +542,17 @@ export default function App() {
                 onClick={onConfirmAll}
               >
                 {confirmingAll
-                  ? '주문 처리 중…'
+                  ? '처리 중…'
                   : pending.length === 0
-                    ? '최종 확인'
+                    ? queued.length > 0
+                      ? '예약 완료'
+                      : '최종 확인'
                     : `최종 확인 (${pending.length}건)`}
               </button>
             </div>
           </div>
 
-          {pending.length === 0 ? (
+          {pending.length === 0 && queued.length === 0 ? (
             <p className="empty">
               대기 중인 주문이 없습니다. 평일 {dash.schedule?.timeKst ?? '17:30'} KST에 자동으로
               분석됩니다.
@@ -537,11 +560,11 @@ export default function App() {
           ) : (
             <>
               <p className="hint">
-                매도 제안이 있으면 당일은 매도만 합니다. 매수는 현금 한도 안·매도 다음날입니다.
-                빼고 싶은 종목만 「이 종목만 빼기」한 뒤 <strong>최종 확인</strong>을 누르세요.
+                장외(15:30 이후·주말)에 확인하면 <strong>다음 장 09:05</strong>에 자동 주문됩니다.
+                매도 제안이 있으면 당일은 매도만, 매수는 현금 한도 안입니다.
               </p>
               <div className="alert-list">
-                {pending.map((a) => (
+                {[...queued, ...pending].map((a) => (
                   <ProposalCard
                     key={a.id}
                     alert={a}

@@ -1,7 +1,7 @@
 import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
 import { getBroker, BrokerError, fetchBrokerStatus } from './broker/index.js';
-import { runPretradeMoA } from './pretrade.js';
+import { isKrCashSession, isUsCashSession, runPretradeMoA } from './pretrade.js';
 import { runMixtureOfAgents, type MoARevisionHints } from './moa.js';
 import { checkApproveConfirm } from './security.js';
 import {
@@ -155,12 +155,27 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
  * 사용자 confirm="허락" + 사전거래 MoA 통과 시에만 체결.
  * LIVE를 영구 무장하지 않고, 해당 주문에만 일회성으로 브로커 live 클라이언트를 사용.
  */
+function isKrSymbol(symbol: string): boolean {
+  return /^[0-9]{6}$/.test(symbol) || (/^[0-9A-Z]{6}$/.test(symbol) && /\d/.test(symbol));
+}
+
+function isSessionOpenFor(symbol: string): boolean {
+  return isKrSymbol(symbol) ? isKrCashSession() : isUsCashSession();
+}
+
+function isSessionHardDeny(gate: { hardDeny: boolean; blockReasons: string[] }): boolean {
+  return (
+    gate.hardDeny &&
+    gate.blockReasons.some((r) => /장외|휴장|session|정규장/i.test(r))
+  );
+}
+
 export async function actOnAlert(
   alertId: string,
   amount: number,
   action: 'execute' | 'skip' = 'execute',
   confirm = '',
-  opts: { skipSync?: boolean } = {},
+  opts: { skipSync?: boolean; fromQueue?: boolean } = {},
 ): Promise<{ state: AppState; alert: DailyAlert; trade?: TradeRecord }> {
   let state = loadState();
   const alert = state.alerts.find((a) => a.id === alertId);
@@ -169,7 +184,9 @@ export async function actOnAlert(
   if (alert.status === 'executing') {
     throw new ExecuteError('이미 주문 처리 중입니다. 체결/거부 결과를 확인한 뒤 다시 시도하세요.');
   }
-  if (alert.status !== 'pending') throw new ExecuteError('이미 처리된 알림입니다.');
+  const canRun =
+    alert.status === 'pending' || (opts.fromQueue && alert.status === 'queued');
+  if (!canRun) throw new ExecuteError('이미 처리된 알림입니다.');
 
   if (action === 'skip') {
     alert.status = 'skipped';
@@ -179,8 +196,11 @@ export async function actOnAlert(
     return { state, alert };
   }
 
-  const conf = checkApproveConfirm(confirm);
-  if (!conf.ok) throw new ExecuteError(conf.error);
+  // 예약 실행(fromQueue)은 이미 최종확인된 건 — confirm 문구 재요구 안 함
+  if (!opts.fromQueue) {
+    const conf = checkApproveConfirm(confirm);
+    if (!conf.ok) throw new ExecuteError(conf.error);
+  }
 
   if (!opts.skipSync) {
     try {
@@ -233,15 +253,35 @@ export async function actOnAlert(
     buyingPower,
   });
 
+  // 장외/휴장 + 사용자 최종확인 → 즉시 실패 대신 다음 장 예약
+  if (!gate.allow && isSessionHardDeny(gate) && !opts.fromQueue) {
+    alert.status = 'queued';
+    alert.actedAt = new Date().toISOString();
+    alert.executionNote =
+      '최종확인 완료 · 장외라 다음 정규장(약 09:05 KST)에 자동 주문 예약됨';
+    saveState(state);
+    return { state, alert };
+  }
+
   // soft-deny면 중단하지 않고 분석 MoA를 다시 돌려 허용안을 만든다
+  // 예약 실행(fromQueue)은 사용자가 이미 확인했으므로 악마의 변호인을 더 완화
   const reviseLog: string[] = [];
-  for (let round = 0; !gate.allow && gate.revisable && round < 3; round++) {
+  const maxRevise = opts.fromQueue ? 4 : 3;
+  for (let round = 0; !gate.allow && (gate.revisable || opts.fromQueue) && round < maxRevise; round++) {
+    if (gate.hardDeny && !opts.fromQueue) break;
+    if (isSessionHardDeny(gate) && opts.fromQueue) {
+      // 아직 장 시작 전 — 예약 유지
+      alert.status = 'queued';
+      alert.executionNote = '장 미개장 · 예약 유지 (다음 틱에 재시도)';
+      saveState(state);
+      return { state, alert };
+    }
     const hints: MoARevisionHints = {
       round: round + 1,
       reasons: gate.reviseReasons.length ? gate.reviseReasons : gate.blockReasons,
-      forceSizeFactor: Math.max(0.25, gate.sizeFactor * 0.75),
+      forceSizeFactor: Math.max(0.25, gate.sizeFactor * (opts.fromQueue ? 0.65 : 0.75)),
       softenDevilVeto: true,
-      relaxConfidenceFloor: 0.4,
+      relaxConfidenceFloor: opts.fromQueue ? 0.28 : 0.4,
     };
     const revised = runMixtureOfAgents(research, mode, heldShares, hints);
     reviseLog.push(
@@ -285,11 +325,21 @@ export async function actOnAlert(
   }
 
   if (!gate.allow) {
-    // hard deny이거나 재분석으로도 못 푼 경우만 중단
+    // 예약 건이 장중에도 막히면 사용자에게 보이도록 pending 복구
+    if (opts.fromQueue && isSessionHardDeny(gate)) {
+      alert.status = 'queued';
+      alert.executionNote = '장 미개장 · 예약 유지';
+      saveState(state);
+      return { state, alert };
+    }
     const note = reviseLog.length
       ? `${gate.summary} (재분석 ${reviseLog.length}회 시도)`
       : gate.summary;
     alert.executionNote = note;
+    if (opts.fromQueue) {
+      alert.status = 'pending';
+      alert.executionNote = `개장 후 재확인 필요: ${note}`;
+    }
     saveState(state);
     throw new ExecuteError(note);
   }
@@ -372,7 +422,7 @@ export async function actOnAlert(
     const fresh = loadState();
     const a = fresh.alerts.find((x) => x.id === alertId);
     if (a && a.status === 'executing') {
-      a.status = 'pending';
+      a.status = opts.fromQueue ? 'queued' : 'pending';
       a.executionNote = `주문 실패로 복구: ${err instanceof Error ? err.message : 'unknown'}`;
       saveState(fresh);
     }
@@ -415,4 +465,53 @@ export async function actOnAlert(
   persistRiskFlags(state, riskAfter);
   saveState(state);
   return { state, alert: done, trade };
+}
+
+/** 장 시작 후 예약(queued) 주문 일괄 실행 */
+export async function flushQueuedOrders(): Promise<{
+  attempted: number;
+  executed: number;
+  stillQueued: number;
+  failed: { id: string; symbol: string; error: string }[];
+}> {
+  const state0 = loadState();
+  try {
+    await syncFromBroker(state0);
+  } catch (err) {
+    console.warn('[flushQueued] sync', err instanceof Error ? err.message : err);
+  }
+
+  const queued = loadState()
+    .alerts.filter((a) => a.status === 'queued')
+    .sort((a, b) => {
+      if (a.side !== b.side) return a.side === 'sell' ? -1 : 1;
+      return 0;
+    });
+
+  const failed: { id: string; symbol: string; error: string }[] = [];
+  let executed = 0;
+  let stillQueued = 0;
+
+  for (const alert of queued) {
+    if (!isSessionOpenFor(alert.symbol)) {
+      stillQueued += 1;
+      continue;
+    }
+    try {
+      const result = await actOnAlert(alert.id, 0, 'execute', '', {
+        skipSync: true,
+        fromQueue: true,
+      });
+      if (result.alert.status === 'executed') executed += 1;
+      else if (result.alert.status === 'queued') stillQueued += 1;
+    } catch (err) {
+      failed.push({
+        id: alert.id,
+        symbol: alert.symbol,
+        error: err instanceof Error ? err.message : '실패',
+      });
+    }
+  }
+
+  return { attempted: queued.length, executed, stillQueued, failed };
 }

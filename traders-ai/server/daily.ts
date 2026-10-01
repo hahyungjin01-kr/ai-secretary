@@ -105,6 +105,7 @@ function toAlert(draft: DraftAlert): DailyAlert {
  * - 매수만 있으면 합계가 가용현금을 넘지 않게 축소/만료
  */
 export function reconcilePendingAlerts(state: AppState): AppState {
+  // queued(예약)는 건드리지 않음 — 사용자가 이미 최종확인한 건
   const pending = state.alerts.filter((a) => a.status === 'pending');
   const sells = pending.filter((a) => a.side === 'sell');
   const buys = pending.filter((a) => a.side === 'buy');

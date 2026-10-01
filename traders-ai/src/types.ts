@@ -41,7 +41,7 @@ export interface DailyAlert {
   maxAmount: number;
   currency: string;
   mode: TraderMode;
-  status: 'pending' | 'executing' | 'executed' | 'skipped' | 'expired';
+  status: 'pending' | 'queued' | 'executing' | 'executed' | 'skipped' | 'expired';
   strategy?: string;
   howToInvest?: string;
   horizon?: string;
@@ -165,6 +165,12 @@ export interface Dashboard {
     notify?: NotifyInfo & {
       lastAttemptAt: string | null;
       lastResult: string | null;
+    };
+    executeQueued?: {
+      timeKst: string;
+      lastAttemptAt: string | null;
+      lastResult: string | null;
+      nextHint: string;
     };
   };
   notify?: NotifyInfo;
