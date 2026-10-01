@@ -130,6 +130,25 @@ export interface Dashboard {
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
   paperTrading: boolean;
+  risk?: {
+    paperOnly: boolean;
+    liveUnlocked: boolean;
+    paperTradeDays: number;
+    paperTradeDaysRequired: number;
+    paperCalendarDays: number;
+    paperCalendarDaysRequired: number;
+    canUnlockLive: boolean;
+    killSwitchActive: boolean;
+    killSwitchReason: string | null;
+    dailyLossLimitPct: number;
+    dayPnl: number;
+    dayPnlPct: number;
+    consecutiveLosses: number;
+    maxConsecutiveLosses: number;
+    buysLocked: boolean;
+    lockReason: string | null;
+    message: string;
+  };
   broker: BrokerStatus;
   disclaimer: string;
   accessTokenRequired?: boolean;
@@ -286,6 +305,26 @@ export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashbo
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ arm, confirm }),
+    }),
+  );
+}
+
+export async function unlockLiveTrading(): Promise<Dashboard> {
+  return parse(
+    await apiFetch('/api/risk/unlock-live', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ confirm: 'UNLOCK' }),
+    }),
+  );
+}
+
+export async function lockLiveTrading(): Promise<Dashboard> {
+  return parse(
+    await apiFetch('/api/risk/lock-live', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: '{}',
     }),
   );
 }

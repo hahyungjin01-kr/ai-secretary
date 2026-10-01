@@ -313,6 +313,18 @@ button.primary.big {
   font-size: 0.9rem;
 }
 
+.risk-metrics {
+  margin: 0.75rem 0;
+}
+
+.risk-metrics .up {
+  color: var(--teal);
+}
+
+.risk-metrics .down {
+  color: var(--danger);
+}
+
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

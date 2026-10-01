@@ -10,6 +10,12 @@ import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
 import { APPROVE_PHRASE, accessTokenConfigured, checkAccessToken } from './security.js';
+import {
+  evaluateRisk,
+  persistRiskFlags,
+  unlockLiveTrading,
+  lockLiveTrading,
+} from './risk.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -32,8 +38,12 @@ function requireAccessToken(req: Request, res: Response, next: NextFunction) {
 }
 
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
-  const broker = await fetchBrokerStatus(state.liveTradingArmed);
+  const broker = await fetchBrokerStatus(false);
   const equity = portfolioValue(state, marks);
+  const risk = evaluateRisk(state, marks);
+  persistRiskFlags(state, risk);
+  saveState(state);
+
   const positionMarks = state.positions.map((p) => {
     const mark = marks[p.symbol] ?? p.avgPrice;
     return {
@@ -49,7 +59,7 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
   });
 
   const usingBroker = broker.configured && broker.connected && state.preferBroker;
-  const paperTrading = !(usingBroker && state.liveTradingArmed);
+  const paperTrading = risk.paperOnly || !usingBroker;
 
   return {
     mode: state.mode,
@@ -80,11 +90,11 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     liveTradingArmed: state.liveTradingArmed,
     liveArmedAt: state.liveArmedAt,
     paperTrading,
+    risk,
     broker,
     brokerSetup: brokerConfigSummary(),
-    disclaimer: usingBroker
-      ? '토스 연동: 사전거래 MoA 통과 후 「최종 확인」 버튼 한 번으로 대기 주문을 실행합니다. 수익 보장 없음.'
-      : '로컬 모의투자입니다. .env에 토스 키를 넣으면 실계좌 연동. 「최종 확인」으로 대기 주문을 실행합니다.',
+    disclaimer:
+      '수익을 보장하지 않습니다. 페이퍼 검증·일손실 킬스위치·최종 확인 후에만 주문이 나갑니다. 손익은 사용자 책임입니다.',
   };
 }
 
@@ -275,6 +285,27 @@ app.post('/api/daily/run', requireAccessToken, async (req, res) => {
 });
 
 /** 대기 중인 제안을 최종 확인 한 번에 순차 실행 */
+app.post('/api/risk/unlock-live', requireAccessToken, async (req, res) => {
+  try {
+    let state = loadState();
+    state = unlockLiveTrading(state, String(req.body?.confirm ?? ''));
+    const marks = await markPrices(state);
+    res.json(await publicState(state, marks));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '해금 실패' });
+  }
+});
+
+app.post('/api/risk/lock-live', requireAccessToken, async (_req, res) => {
+  try {
+    const state = lockLiveTrading(loadState());
+    const marks = await markPrices(state);
+    res.json(await publicState(state, marks));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '잠금 실패' });
+  }
+});
+
 app.post('/api/alerts/confirm-all', requireAccessToken, async (req, res) => {
   try {
     const confirm = String(req.body?.confirm ?? APPROVE_PHRASE);

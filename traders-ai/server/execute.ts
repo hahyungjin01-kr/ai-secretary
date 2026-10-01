@@ -5,6 +5,11 @@ import { runPretradeMoA } from './pretrade.js';
 import { runMixtureOfAgents, type MoARevisionHints } from './moa.js';
 import { checkApproveConfirm } from './security.js';
 import {
+  evaluateRisk,
+  persistRiskFlags,
+  recordPaperTradeDay,
+} from './risk.js';
+import {
   loadState,
   saveState,
   uid,
@@ -178,6 +183,14 @@ export async function actOnAlert(
     }
   }
 
+  // 리스크 게이트: 일손실 킬스위치 / 연속손실 → 신규 매수 차단 (매도는 허용)
+  const risk0 = evaluateRisk(state);
+  persistRiskFlags(state, risk0);
+  saveState(state);
+  if (alert.side === 'buy' && risk0.buysLocked) {
+    throw new ExecuteError(risk0.lockReason || '리스크 잠금으로 매수할 수 없습니다.');
+  }
+
   const research = await collectResearch(alert.symbol);
   // 괴리 검사용으로 제안 시점 entry는 유지하고, 현재가만 요약에 반영
   const proposedEntry = alert.entry;
@@ -296,7 +309,12 @@ export async function actOnAlert(
   alert.executionNote = `사전거래 MoA 통과 · 주문 중… (${gate.summary})`;
   saveState(state);
 
-  const wantsLive = Boolean(state.preferBroker && getBroker(false));
+  // 페이퍼 검증 기간에는 토스 키가 있어도 로컬 모의만
+  const risk = evaluateRisk(state, { [alert.symbol]: research.price });
+  persistRiskFlags(state, risk);
+  const wantsLive = Boolean(
+    state.preferBroker && getBroker(false) && !risk.paperOnly && state.liveTradingUnlocked,
+  );
   // 건별 일회성 live 클라이언트 — state.liveTradingArmed 는 건드리지 않음
   const broker = wantsLive ? getBroker(true) : null;
   let venue: TradeRecord['venue'] = 'local-paper';
@@ -329,14 +347,16 @@ export async function actOnAlert(
         // 주문은 나갔으므로 executed로 확정하고 동기화 경고만 남김
         console.error('[execute] post-order sync', syncErr);
       }
-      note = `건별 허락 · 토스 ${alert.side === 'buy' ? '매수' : '매도'} ${shares}주 (${order.status}) · ${gate.summary}`;
+      note = `최종확인 · 토스 ${alert.side === 'buy' ? '매수' : '매도'} ${shares}주 (${order.status}) · ${gate.summary}`;
     } else {
       if (alert.side === 'buy') {
         applyLocalBuy(state, alert.symbol, research.name, research.currency, shares, fillPrice);
       } else {
         shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
       }
-      note = `건별 허락 · 로컬 모의 ${shares}주 · ${gate.summary}`;
+      note = risk.paperOnly
+        ? `최종확인 · 페이퍼(검증기간) ${shares}주 · ${risk.message}`
+        : `최종확인 · 로컬 모의 ${shares}주 · ${gate.summary}`;
     }
   } catch (err) {
     // 주문 API 실패 — 재시도 가능하도록 pending 복구
@@ -377,8 +397,13 @@ export async function actOnAlert(
   done.executionNote = note;
   done.entry = fillPrice;
   state.trades = [trade, ...state.trades].slice(0, 300);
+  if (venue === 'local-paper') {
+    recordPaperTradeDay(state, trade.at);
+  }
   // LIVE 영구 무장 금지
   state.liveTradingArmed = false;
+  const riskAfter = evaluateRisk(state, { [done.symbol]: fillPrice });
+  persistRiskFlags(state, riskAfter);
   saveState(state);
   return { state, alert: done, trade };
 }

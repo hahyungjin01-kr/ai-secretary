@@ -96,6 +96,14 @@ export interface AppState {
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
   preferBroker: boolean;
+  /** 페이퍼 검증 후 사용자가 UNLOCK 한 경우에만 실주문 */
+  liveTradingUnlocked: boolean;
+  liveUnlockedAt: string | null;
+  paperStartedAt: string | null;
+  paperTradeDates: string[];
+  dayBaseline: { date: string; equity: number } | null;
+  killSwitchActive: boolean;
+  killSwitchReason: string | null;
 }
 
 const DEFAULT_STATE: AppState = {
@@ -115,6 +123,13 @@ const DEFAULT_STATE: AppState = {
   liveTradingArmed: false,
   liveArmedAt: null,
   preferBroker: true,
+  liveTradingUnlocked: false,
+  liveUnlockedAt: null,
+  paperStartedAt: null,
+  paperTradeDates: [],
+  dayBaseline: null,
+  killSwitchActive: false,
+  killSwitchReason: null,
 };
 
 function ensureDataDir() {
@@ -144,6 +159,13 @@ export function loadState(): AppState {
       lastUniverseSummary: raw.lastUniverseSummary ?? null,
       lastUniverseSymbols: raw.lastUniverseSymbols ?? [],
       lastUniverseAt: raw.lastUniverseAt ?? null,
+      liveTradingUnlocked: Boolean(raw.liveTradingUnlocked),
+      liveUnlockedAt: raw.liveUnlockedAt ?? null,
+      paperStartedAt: raw.paperStartedAt ?? null,
+      paperTradeDates: Array.isArray(raw.paperTradeDates) ? raw.paperTradeDates : [],
+      dayBaseline: raw.dayBaseline ?? null,
+      killSwitchActive: Boolean(raw.killSwitchActive),
+      killSwitchReason: raw.killSwitchReason ?? null,
     };
   } catch {
     return structuredClone(DEFAULT_STATE);
