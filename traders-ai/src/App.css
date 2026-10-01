@@ -94,6 +94,53 @@ input {
   font-size: 0.85rem;
 }
 
+.badge.live {
+  border-color: rgba(163, 59, 43, 0.45);
+  background: rgba(163, 59, 43, 0.12);
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.setup-steps {
+  margin: 0.25rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.setup-steps code {
+  font-size: 0.88em;
+  background: rgba(18, 35, 28, 0.06);
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
+.broker-error {
+  color: var(--danger);
+  margin: 0.35rem 0 0;
+}
+
+.live-arm {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.live-arm label {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+button.primary.danger,
+button.ghost.danger {
+  border-color: rgba(163, 59, 43, 0.35);
+}
+
+button.primary.danger {
+  background: var(--danger);
+}
+
 .shell {
   width: min(1100px, calc(100% - 2rem));
   margin: 0 auto 3rem;

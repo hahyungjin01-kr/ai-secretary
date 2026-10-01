@@ -65,6 +65,35 @@ export interface TradeRecord {
   mode: TraderMode;
   reason: string;
   at: string;
+  venue?: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+  brokerOrderId?: string;
+  brokerStatus?: string;
+}
+
+export interface BrokerAccount {
+  id: string;
+  status: string;
+  currency: string;
+  cash: number;
+  equity: number;
+  buyingPower: number;
+  portfolioValue: number;
+  patternDayTrader: boolean;
+  tradingBlocked: boolean;
+  accountBlocked: boolean;
+}
+
+export interface BrokerStatus {
+  configured: boolean;
+  connected: boolean;
+  venue: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+  provider: 'none' | 'alpaca';
+  baseUrl: string | null;
+  liveCapable: boolean;
+  liveArmed: boolean;
+  message: string;
+  account?: BrokerAccount;
+  error?: string;
 }
 
 export interface Dashboard {
@@ -84,7 +113,11 @@ export interface Dashboard {
   trades: TradeRecord[];
   lastDailyRunAt: string | null;
   lastDailyRunDate: string | null;
+  preferBroker: boolean;
+  liveTradingArmed: boolean;
+  liveArmedAt: string | null;
   paperTrading: boolean;
+  broker: BrokerStatus;
   disclaimer: string;
   createdCount?: number;
   scanned?: number;
@@ -109,6 +142,7 @@ export async function updateSettings(body: {
   watchlist?: string[];
   cash?: number;
   resetStarting?: boolean;
+  preferBroker?: boolean;
 }): Promise<Dashboard> {
   return parse(
     await fetch('/api/settings', {
@@ -139,6 +173,26 @@ export async function actOnAlert(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount, action }),
+    }),
+  );
+}
+
+export async function syncBroker(): Promise<Dashboard> {
+  return parse(
+    await fetch('/api/broker/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }),
+  );
+}
+
+export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashboard> {
+  return parse(
+    await fetch('/api/broker/live', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ arm, confirm }),
     }),
   );
 }

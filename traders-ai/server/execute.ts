@@ -1,5 +1,6 @@
 import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
+import { getBroker, BrokerError } from './broker/index.js';
 import {
   loadState,
   saveState,
@@ -50,16 +51,91 @@ function clampAmount(alert: DailyAlert, amount: number, state: AppState): number
   return round(capped);
 }
 
+function applyLocalBuy(
+  state: AppState,
+  symbol: string,
+  name: string,
+  currency: string,
+  shares: number,
+  price: number,
+) {
+  const cost = round(shares * price);
+  if (cost > state.cash) throw new ExecuteError('현금이 부족합니다.');
+  state.cash = round(state.cash - cost);
+  const existing = state.positions.find((p) => p.symbol === symbol);
+  if (existing) {
+    const totalShares = existing.shares + shares;
+    existing.avgPrice = round(
+      (existing.avgPrice * existing.shares + price * shares) / totalShares,
+    );
+    existing.shares = totalShares;
+    existing.updatedAt = new Date().toISOString();
+    existing.name = name;
+  } else {
+    state.positions.push({
+      symbol,
+      name,
+      shares,
+      avgPrice: price,
+      currency,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
+function applyLocalSell(state: AppState, symbol: string, shares: number, price: number) {
+  const existing = state.positions.find((p) => p.symbol === symbol);
+  if (!existing) throw new ExecuteError('보유 포지션이 없습니다.');
+  const qty = Math.min(existing.shares, shares);
+  const proceeds = round(qty * price);
+  existing.shares -= qty;
+  existing.updatedAt = new Date().toISOString();
+  state.cash = round(state.cash + proceeds);
+  if (existing.shares <= 0) {
+    state.positions = state.positions.filter((p) => p.symbol !== symbol);
+  }
+  return qty;
+}
+
+/** 브로커 잔고/포지션을 로컬 상태에 반영 */
+export async function syncFromBroker(state: AppState = loadState()): Promise<AppState> {
+  if (!state.preferBroker) return state;
+  const broker = getBroker(state.liveTradingArmed);
+  if (!broker) return state;
+
+  const [account, positions] = await Promise.all([
+    broker.getAccount(),
+    broker.getPositions(),
+  ]);
+
+  state.cash = round(account.cash);
+  state.currency = account.currency || state.currency;
+  if (state.startingCash <= 0) state.startingCash = round(account.equity);
+
+  const now = new Date().toISOString();
+  state.positions = positions.map((p) => ({
+    symbol: p.symbol,
+    name: p.symbol,
+    shares: p.qty,
+    avgPrice: p.avgEntryPrice,
+    currency: account.currency || 'USD',
+    updatedAt: now,
+  }));
+
+  saveState(state);
+  return state;
+}
+
 /**
  * 사용자가 금액만 입력하면, 모드 규칙 + 현재가로 수량/체결을 시스템이 결정합니다.
- * MVP는 페이퍼 트레이딩(모의체결)입니다.
+ * Alpaca 키가 있으면 브로커로 주문하고, 없으면 로컬 모의체결합니다.
  */
 export async function actOnAlert(
   alertId: string,
   amount: number,
   action: 'execute' | 'skip' = 'execute',
 ): Promise<{ state: AppState; alert: DailyAlert; trade?: TradeRecord }> {
-  const state = loadState();
+  let state = loadState();
   const alert = state.alerts.find((a) => a.id === alertId);
   if (!alert) throw new ExecuteError('알림을 찾을 수 없습니다.');
   if (alert.status !== 'pending') throw new ExecuteError('이미 처리된 알림입니다.');
@@ -72,7 +148,17 @@ export async function actOnAlert(
     return { state, alert };
   }
 
-  // refresh price before fill
+  // refresh local cash/positions from broker before sizing
+  try {
+    state = await syncFromBroker(state);
+  } catch (err) {
+    if (state.preferBroker && getBroker(state.liveTradingArmed)) {
+      throw new ExecuteError(
+        `브로커 동기화 실패: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
+  }
+
   const research = await collectResearch(alert.symbol);
   alert.entry = research.price;
   alert.researchSummary = {
@@ -86,54 +172,56 @@ export async function actOnAlert(
   const fillAmount = clampAmount(alert, amount, state);
   const price = research.price;
   let shares = 0;
-  let note = '';
 
   if (alert.side === 'buy') {
     shares = Math.floor(fillAmount / price);
     if (shares <= 0) throw new ExecuteError('금액이 주가보다 작아 1주도 매수할 수 없습니다.');
-    const cost = round(shares * price);
-    if (cost > state.cash) throw new ExecuteError('현금이 부족합니다.');
-
-    state.cash = round(state.cash - cost);
-    const existing = state.positions.find((p) => p.symbol === alert.symbol);
-    if (existing) {
-      const totalShares = existing.shares + shares;
-      existing.avgPrice = round(
-        (existing.avgPrice * existing.shares + price * shares) / totalShares,
-      );
-      existing.shares = totalShares;
-      existing.updatedAt = new Date().toISOString();
-      existing.name = research.name;
-    } else {
-      state.positions.push({
-        symbol: alert.symbol,
-        name: research.name,
-        shares,
-        avgPrice: price,
-        currency: research.currency,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    note = `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 매수 체결 (모의)`;
   } else {
     const existing = state.positions.find((p) => p.symbol === alert.symbol);
-    if (!existing) throw new ExecuteError('보유 포지션이 없습니다.');
+    if (!existing) throw new ExecuteError('매도할 보유 수량이 없습니다.');
     shares = Math.min(existing.shares, Math.floor(fillAmount / price));
-    if (shares <= 0) {
-      // sell all remaining if amount covers fractional remainder intent
-      shares = existing.shares;
-    }
-    // if user asked near max, sell all
-    if (fillAmount >= alert.maxAmount * 0.95) shares = existing.shares;
+    if (shares <= 0 || fillAmount >= alert.maxAmount * 0.95) shares = existing.shares;
+  }
 
-    const proceeds = round(shares * price);
-    existing.shares -= shares;
-    existing.updatedAt = new Date().toISOString();
-    state.cash = round(state.cash + proceeds);
-    if (existing.shares <= 0) {
-      state.positions = state.positions.filter((p) => p.symbol !== alert.symbol);
+  const broker = state.preferBroker ? getBroker(state.liveTradingArmed) : null;
+  let venue: TradeRecord['venue'] = 'local-paper';
+  let brokerOrderId: string | undefined;
+  let brokerStatus: string | undefined;
+  let fillPrice = price;
+  let note = '';
+
+  if (broker) {
+    try {
+      const order = await broker.placeOrder({
+        symbol: alert.symbol,
+        side: alert.side,
+        qty: shares,
+        type: 'market',
+        timeInForce: 'day',
+        clientOrderId: `tai_${alert.id}`.slice(0, 48),
+      });
+      venue = broker.venue;
+      brokerOrderId = order.id;
+      brokerStatus = order.status;
+      if (order.filledAvgPrice != null && order.filledAvgPrice > 0) {
+        fillPrice = order.filledAvgPrice;
+      }
+      if (order.filledQty > 0) shares = order.filledQty;
+
+      // resync canonical balances from broker
+      state = await syncFromBroker(state);
+      note = `${MODE_PROFILES[state.mode].label} · ${venue} 주문 ${shares}주 (${order.status})`;
+    } catch (err) {
+      const msg = err instanceof BrokerError || err instanceof Error ? err.message : '주문 실패';
+      throw new ExecuteError(`브로커 주문 실패: ${msg}`);
     }
-    note = `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 매도 체결 (모의)`;
+  } else {
+    if (alert.side === 'buy') {
+      applyLocalBuy(state, alert.symbol, research.name, research.currency, shares, fillPrice);
+    } else {
+      shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
+    }
+    note = `${MODE_PROFILES[state.mode].label} 규칙으로 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'} 체결 (로컬 모의)`;
   }
 
   const trade: TradeRecord = {
@@ -141,12 +229,15 @@ export async function actOnAlert(
     alertId: alert.id,
     symbol: alert.symbol,
     side: alert.side,
-    amount: round(shares * price),
+    amount: round(shares * fillPrice),
     shares,
-    price,
+    price: fillPrice,
     mode: state.mode,
     reason: alert.thesis,
     at: new Date().toISOString(),
+    venue,
+    brokerOrderId,
+    brokerStatus,
   };
 
   alert.status = 'executed';

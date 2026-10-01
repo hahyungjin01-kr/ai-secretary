@@ -3,6 +3,8 @@ import {
   actOnAlert,
   fetchDashboard,
   runDaily,
+  setLiveTrading,
+  syncBroker,
   updateSettings,
   type DailyAlert,
   type Dashboard,
@@ -168,6 +170,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [watchlistText, setWatchlistText] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [liveConfirm, setLiveConfirm] = useState('');
+  const [brokerBusy, setBrokerBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
@@ -259,6 +263,44 @@ export default function App() {
     }
   }
 
+  async function onSyncBroker() {
+    setBrokerBusy(true);
+    setError(null);
+    try {
+      const data = await syncBroker();
+      setDash(data);
+      setNotice(data.broker.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '브로커 동기화 실패');
+    } finally {
+      setBrokerBusy(false);
+    }
+  }
+
+  async function onArmLive(arm: boolean) {
+    setBrokerBusy(true);
+    setError(null);
+    try {
+      const data = await setLiveTrading(arm, arm ? liveConfirm : '');
+      setDash(data);
+      setLiveConfirm('');
+      setNotice(arm ? '실주문이 활성화되었습니다. 실제 돈이 움직입니다.' : '실주문을 잠갔습니다.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '실주문 설정 실패');
+    } finally {
+      setBrokerBusy(false);
+    }
+  }
+
+  function venueBadge(dash: Dashboard) {
+    if (!dash.broker.configured) return `로컬 모의 · ${modeLabel}`;
+    if (!dash.broker.connected) return `연결 실패 · ${modeLabel}`;
+    if (dash.broker.venue === 'alpaca-live') {
+      return dash.liveTradingArmed ? `실계좌 LIVE · ${modeLabel}` : `실계좌 잠금 · ${modeLabel}`;
+    }
+    return `Alpaca 페이퍼 · ${modeLabel}`;
+  }
+
   if (loading) {
     return (
       <div className="page boot">
@@ -287,7 +329,7 @@ export default function App() {
           <p className="brand">TRADERS AI</p>
           <p className="brand-sub">매일 분석 · 알림 · 금액만 입력하면 실행</p>
         </div>
-        <p className="badge">모의투자 · {modeLabel}</p>
+        <p className={`badge ${dash.liveTradingArmed ? 'live' : ''}`}>{venueBadge(dash)}</p>
       </header>
 
       <main className="shell">
@@ -295,8 +337,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>모드를 고르고, 매일 오는 알림에 금액만 답하세요</h1>
             <p>
-              시세·차트·뉴스는 앱이 스스로 조사합니다. 사용자는 안전형 / 밸런스형 / 수익형을
-              선택하고, 매수·매도 알림에 금액을 입력하면 AI가 수량과 체결을 결정합니다.
+              시세·차트·뉴스는 앱이 스스로 조사합니다. Alpaca 계좌를 연결하면 알림에 입력한
+              금액으로 실제(또는 페이퍼) 주문이 나갑니다.
             </p>
           </div>
 
@@ -333,6 +375,116 @@ export default function App() {
             <span>대기 알림</span>
             <strong>{pending.length}</strong>
           </div>
+        </section>
+
+        <section className="panel broker">
+          <div className="controls-head">
+            <div>
+              <h2>계좌 연동 (Alpaca)</h2>
+              <p>{dash.broker.message}</p>
+              {dash.broker.error && <p className="broker-error">{dash.broker.error}</p>}
+            </div>
+            <div className="controls-actions">
+              <button
+                type="button"
+                className="ghost"
+                disabled={brokerBusy || !dash.broker.configured}
+                onClick={onSyncBroker}
+              >
+                {brokerBusy ? '동기화 중…' : '잔고 동기화'}
+              </button>
+            </div>
+          </div>
+
+          {!dash.broker.configured ? (
+            <ol className="setup-steps">
+              <li>
+                <a href="https://app.alpaca.markets" target="_blank" rel="noreferrer">
+                  Alpaca
+                </a>
+                에서 계좌를 만들고 API Key를 발급하세요.
+              </li>
+              <li>
+                <code>traders-ai/.env.example</code>을 복사해 <code>.env</code>를 만드세요.
+              </li>
+              <li>
+                <code>ALPACA_API_KEY</code>, <code>ALPACA_API_SECRET</code>를 넣고 서버를 다시
+                시작하세요.
+              </li>
+              <li>
+                처음엔 페이퍼 URL 권장. 실계좌는 <code>ALPACA_LIVE=true</code> 후 아래에서 LIVE
+                확인.
+              </li>
+            </ol>
+          ) : (
+            <dl className="mode-limits">
+              <div>
+                <dt>연결</dt>
+                <dd>{dash.broker.connected ? 'OK' : '실패'}</dd>
+              </div>
+              <div>
+                <dt>환경</dt>
+                <dd>
+                  {dash.broker.venue === 'alpaca-live'
+                    ? '실계좌'
+                    : dash.broker.venue === 'alpaca-paper'
+                      ? '페이퍼'
+                      : '로컬'}
+                </dd>
+              </div>
+              <div>
+                <dt>Buying Power</dt>
+                <dd>
+                  {dash.broker.account
+                    ? money(dash.broker.account.buyingPower, dash.broker.account.currency)
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt>실주문</dt>
+                <dd>{dash.liveTradingArmed ? '해제됨' : '잠김'}</dd>
+              </div>
+            </dl>
+          )}
+
+          {dash.broker.liveCapable && (
+            <div className="live-arm">
+              {dash.liveTradingArmed ? (
+                <button
+                  type="button"
+                  className="ghost danger"
+                  disabled={brokerBusy}
+                  onClick={() => onArmLive(false)}
+                >
+                  실주문 잠그기
+                </button>
+              ) : (
+                <>
+                  <label htmlFor="live-confirm">
+                    실주문 켜려면 아래칸에 <strong>LIVE</strong> 입력
+                  </label>
+                  <div className="watch-row">
+                    <input
+                      id="live-confirm"
+                      value={liveConfirm}
+                      onChange={(e) => setLiveConfirm(e.target.value)}
+                      placeholder="LIVE"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="primary danger"
+                      disabled={brokerBusy || liveConfirm.trim().toUpperCase() !== 'LIVE'}
+                      onClick={() => onArmLive(true)}
+                    >
+                      실주문 활성화
+                    </button>
+                  </div>
+                  <p className="hint">실돈이 이동합니다. 활성화 전에 금액·모드를 다시 확인하세요.</p>
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="panel controls">
@@ -480,6 +632,7 @@ export default function App() {
                       </strong>
                       <span>
                         {t.shares}주 · {money(t.amount, dash.currency)}
+                        {t.venue ? ` · ${t.venue}` : ''}
                       </span>
                     </div>
                     <small>{new Date(t.at).toLocaleString('ko-KR')}</small>

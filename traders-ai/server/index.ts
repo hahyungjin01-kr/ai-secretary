@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { MODE_PROFILES, isTraderMode } from './modes.js';
 import { loadState, saveState, portfolioValue, type AppState } from './store.js';
 import { runDailyAnalysis } from './daily.js';
-import { actOnAlert, ExecuteError } from './execute.js';
+import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
+import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -16,7 +17,8 @@ const PORT = Number(process.env.PORT || 8787);
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-function publicState(state: AppState, marks: Record<string, number> = {}) {
+async function publicState(state: AppState, marks: Record<string, number> = {}) {
+  const broker = await fetchBrokerStatus(state.liveTradingArmed);
   const equity = portfolioValue(state, marks);
   const positionMarks = state.positions.map((p) => {
     const mark = marks[p.symbol] ?? p.avgPrice;
@@ -31,6 +33,10 @@ function publicState(state: AppState, marks: Record<string, number> = {}) {
           : 0,
     };
   });
+
+  const usingBroker = broker.configured && broker.connected && state.preferBroker;
+  const paperTrading = !(usingBroker && broker.venue === 'alpaca-live' && state.liveTradingArmed);
+
   return {
     mode: state.mode,
     modeProfile: MODE_PROFILES[state.mode],
@@ -51,9 +57,19 @@ function publicState(state: AppState, marks: Record<string, number> = {}) {
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
     lastDailyRunDate: state.lastDailyRunDate,
-    paperTrading: true,
-    disclaimer:
-      '모의투자(페이퍼) 엔진입니다. 실계좌 자동주문은 연결되어 있지 않습니다. 투자 손실 가능, 수익 보장 없음.',
+    preferBroker: state.preferBroker,
+    liveTradingArmed: state.liveTradingArmed,
+    liveArmedAt: state.liveArmedAt,
+    paperTrading,
+    broker,
+    brokerSetup: brokerConfigSummary(),
+    disclaimer: usingBroker
+      ? broker.venue === 'alpaca-live'
+        ? state.liveTradingArmed
+          ? 'Alpaca 실계좌 주문이 활성화되어 있습니다. 실제 손실이 발생할 수 있습니다.'
+          : 'Alpaca 실계좌는 연결됐지만 실주문은 잠겨 있습니다. LIVE 확인 후에만 주문됩니다.'
+        : 'Alpaca 페이퍼 계좌로 주문합니다. 실돈이 움직이지 않습니다.'
+      : '로컬 모의투자 엔진입니다. .env에 Alpaca 키를 넣으면 계좌 연동 주문이 가능합니다.',
   };
 }
 
@@ -72,27 +88,108 @@ async function markPrices(state: AppState): Promise<Record<string, number>> {
   return marks;
 }
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const state = loadState();
+  const broker = await fetchBrokerStatus(state.liveTradingArmed);
   res.json({
     ok: true,
     service: 'traders-ai',
-    model: 'mode-daily-paper-execution',
-    paperTrading: true,
+    model: 'mode-daily-broker-execution',
+    broker: {
+      configured: broker.configured,
+      connected: broker.connected,
+      venue: broker.venue,
+    },
   });
 });
 
 app.get('/api/dashboard', async (_req, res) => {
   try {
-    const state = loadState();
+    let state = loadState();
+    if (state.preferBroker) {
+      try {
+        state = await syncFromBroker(state);
+      } catch {
+        // keep local snapshot if broker sync fails; status will show error
+      }
+    }
     const marks = await markPrices(state);
-    res.json(publicState(state, marks));
+    res.json(await publicState(state, marks));
   } catch (err) {
     const message = err instanceof Error ? err.message : '대시보드 오류';
     res.status(500).json({ error: message });
   }
 });
 
-app.patch('/api/settings', (req, res) => {
+app.get('/api/broker/status', async (_req, res) => {
+  try {
+    const state = loadState();
+    const broker = await fetchBrokerStatus(state.liveTradingArmed);
+    res.json({
+      ...broker,
+      preferBroker: state.preferBroker,
+      liveTradingArmed: state.liveTradingArmed,
+      liveArmedAt: state.liveArmedAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'broker status error' });
+  }
+});
+
+app.post('/api/broker/sync', async (_req, res) => {
+  try {
+    const state = await syncFromBroker(loadState());
+    const marks = await markPrices(state);
+    res.json(await publicState(state, marks));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '동기화 실패' });
+  }
+});
+
+app.post('/api/broker/live', async (req, res) => {
+  try {
+    const state = loadState();
+    const arm = Boolean(req.body?.arm);
+    const confirm = String(req.body?.confirm ?? '')
+      .trim()
+      .toUpperCase();
+    const summary = brokerConfigSummary();
+
+    if (arm) {
+      if (!summary.configured) {
+        res.status(400).json({ error: 'Alpaca API 키가 설정되지 않았습니다.' });
+        return;
+      }
+      if (!summary.liveCapable) {
+        res.status(400).json({
+          error:
+            '현재 키가 페이퍼 URL입니다. 실계좌를 쓰려면 ALPACA_LIVE=true 또는 ALPACA_BASE_URL=https://api.alpaca.markets 로 설정하세요.',
+        });
+        return;
+      }
+      if (confirm !== 'LIVE') {
+        res.status(400).json({
+          error: '실주문 활성화에는 confirm 값으로 LIVE 를 보내야 합니다.',
+        });
+        return;
+      }
+      state.liveTradingArmed = true;
+      state.liveArmedAt = new Date().toISOString();
+      state.preferBroker = true;
+    } else {
+      state.liveTradingArmed = false;
+      state.liveArmedAt = null;
+    }
+
+    saveState(state);
+    const marks = await markPrices(state);
+    res.json(await publicState(state, marks));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : '설정 실패' });
+  }
+});
+
+app.patch('/api/settings', async (req, res) => {
   try {
     const state = loadState();
     if (req.body?.mode !== undefined) {
@@ -112,10 +209,20 @@ app.patch('/api/settings', (req, res) => {
         .filter(Boolean)
         .slice(0, 12);
     }
+    if (req.body?.preferBroker !== undefined) {
+      state.preferBroker = Boolean(req.body.preferBroker);
+    }
     if (req.body?.cash !== undefined) {
       const cash = Number(req.body.cash);
       if (!Number.isFinite(cash) || cash < 0) {
         res.status(400).json({ error: 'cash는 0 이상이어야 합니다.' });
+        return;
+      }
+      // only allow manual cash edit when not using broker
+      if (state.preferBroker && brokerConfigSummary().configured) {
+        res.status(400).json({
+          error: '브로커 연동 중에는 현금을 수동 수정할 수 없습니다. 브로커 잔고를 동기화하세요.',
+        });
         return;
       }
       state.cash = cash;
@@ -126,7 +233,8 @@ app.patch('/api/settings', (req, res) => {
       }
     }
     saveState(state);
-    res.json(publicState(state));
+    const marks = await markPrices(state);
+    res.json(await publicState(state, marks));
   } catch (err) {
     const message = err instanceof Error ? err.message : '설정 저장 실패';
     res.status(500).json({ error: message });
@@ -136,10 +244,15 @@ app.patch('/api/settings', (req, res) => {
 app.post('/api/daily/run', async (req, res) => {
   try {
     const force = Boolean(req.body?.force);
+    try {
+      await syncFromBroker(loadState());
+    } catch {
+      // analysis can still run on local snapshot
+    }
     const result = await runDailyAnalysis(force);
     const marks = await markPrices(result.state);
     res.json({
-      ...publicState(result.state, marks),
+      ...(await publicState(result.state, marks)),
       createdCount: result.created.length,
       scanned: result.scanned,
       skippedReason: result.skippedReason,
@@ -159,7 +272,7 @@ app.post('/api/alerts/:id/act', async (req, res) => {
     const result = await actOnAlert(req.params.id, amount, action);
     const marks = await markPrices(result.state);
     res.json({
-      ...publicState(result.state, marks),
+      ...(await publicState(result.state, marks)),
       alert: result.alert,
       trade: result.trade,
     });
@@ -174,8 +287,7 @@ app.post('/api/alerts/:id/act', async (req, res) => {
   }
 });
 
-// legacy review endpoint kept for compatibility
-app.post('/api/review', async (req, res) => {
+app.post('/api/review', async (_req, res) => {
   res.status(410).json({
     error:
       '이 API는 폐기되었습니다. /api/daily/run 과 /api/alerts/:id/act 를 사용하세요.',
@@ -191,5 +303,11 @@ app.get(/^(?!\/api).*/, (_req, res) => {
 });
 
 app.listen(PORT, () => {
+  const setup = brokerConfigSummary();
   console.log(`Traders AI listening on http://localhost:${PORT}`);
+  console.log(
+    setup.configured
+      ? `Broker: Alpaca (${setup.venue}) @ ${setup.baseUrl}`
+      : 'Broker: not configured (local paper). Set ALPACA_API_KEY/SECRET in .env',
+  );
 });

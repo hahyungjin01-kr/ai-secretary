@@ -27,6 +27,9 @@ export interface TradeRecord {
   mode: TraderMode;
   reason: string;
   at: string;
+  venue?: 'local-paper' | 'alpaca-paper' | 'alpaca-live';
+  brokerOrderId?: string;
+  brokerStatus?: string;
 }
 
 export type AlertSide = 'buy' | 'sell';
@@ -71,6 +74,10 @@ export interface AppState {
   trades: TradeRecord[];
   lastDailyRunAt: string | null;
   lastDailyRunDate: string | null;
+  /** 실계좌(Alpaca Live) 주문 잠금 해제. 기본 false */
+  liveTradingArmed: boolean;
+  liveArmedAt: string | null;
+  preferBroker: boolean;
 }
 
 const DEFAULT_STATE: AppState = {
@@ -84,6 +91,9 @@ const DEFAULT_STATE: AppState = {
   trades: [],
   lastDailyRunAt: null,
   lastDailyRunDate: null,
+  liveTradingArmed: false,
+  liveArmedAt: null,
+  preferBroker: true,
 };
 
 function ensureDataDir() {
@@ -107,6 +117,9 @@ export function loadState(): AppState {
       alerts: raw.alerts ?? [],
       trades: raw.trades ?? [],
       watchlist: raw.watchlist?.length ? raw.watchlist : DEFAULT_STATE.watchlist,
+      liveTradingArmed: Boolean(raw.liveTradingArmed),
+      liveArmedAt: raw.liveArmedAt ?? null,
+      preferBroker: raw.preferBroker !== false,
     };
   } catch {
     return structuredClone(DEFAULT_STATE);
