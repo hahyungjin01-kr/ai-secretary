@@ -32,28 +32,27 @@ function ProposalCard({
   busyId,
   confirmingAll,
   onDeny,
+  executeTime = '09:05',
 }: {
   alert: DailyAlert;
   busyId: string | null;
   confirmingAll: boolean;
   onDeny: (alert: DailyAlert) => void;
+  executeTime?: string;
 }) {
-  const busy =
-    busyId === alert.id ||
-    alert.status === 'executing' ||
-    alert.status === 'queued' ||
-    confirmingAll;
+  const busy = busyId === alert.id || alert.status === 'executing' || confirmingAll;
   const isBuy = alert.side === 'buy';
+  const isQueued = alert.status === 'queued';
 
   return (
-    <article className={`alert-card ${alert.side}`}>
+    <article className={`alert-card ${alert.side}${isQueued ? ' queued' : ''}`}>
       <header>
         <div>
-          <p className="alert-kicker">
+          <p className={`alert-kicker${isQueued ? ' queued' : ''}`}>
             {alert.status === 'executing'
               ? '주문 처리 중'
-              : alert.status === 'queued'
-                ? '다음 장 예약됨'
+              : isQueued
+                ? '예약 확정'
                 : isBuy
                   ? '매수 제안'
                   : '매도 제안'}
@@ -64,12 +63,26 @@ function ProposalCard({
         </div>
         <div className="score">
           <em>{money(alert.suggestedAmount, alert.currency)}</em>
-          <span>AI 제안 금액</span>
+          <span>{isQueued ? '예약 금액' : 'AI 제안 금액'}</span>
         </div>
       </header>
 
-      <p className="thesis">{alert.thesis}</p>
-      {alert.howToInvest && <p className="playbook">{alert.howToInvest}</p>}
+      {isQueued ? (
+        <p className="queue-banner" role="status">
+          <strong>예약됨</strong>
+          <span>
+            평일 {executeTime} KST에 자동 주문
+            {alert.actedAt
+              ? ` · 확인 ${new Date(alert.actedAt).toLocaleString('ko-KR')}`
+              : ''}
+          </span>
+        </p>
+      ) : (
+        <>
+          <p className="thesis">{alert.thesis}</p>
+          {alert.howToInvest && <p className="playbook">{alert.howToInvest}</p>}
+        </>
+      )}
 
       <dl className="metrics">
         <div>
@@ -85,12 +98,20 @@ function ProposalCard({
           <dd>{money(alert.stop, alert.currency)}</dd>
         </div>
         <div>
-          <dt>신뢰도</dt>
-          <dd>{alert.confidence != null ? `${Math.round(alert.confidence * 100)}%` : '—'}</dd>
+          <dt>{isQueued ? '구분' : '신뢰도'}</dt>
+          <dd>
+            {isQueued
+              ? isBuy
+                ? '매수 예약'
+                : '매도 예약'
+              : alert.confidence != null
+                ? `${Math.round(alert.confidence * 100)}%`
+                : '—'}
+          </dd>
         </div>
       </dl>
 
-      {(alert.moaSummary || alert.expertSummary || alert.devilSummary) && (
+      {!isQueued && (alert.moaSummary || alert.expertSummary || alert.devilSummary) && (
         <div className="pipeline">
           {alert.moaSummary && (
             <p>
@@ -110,20 +131,16 @@ function ProposalCard({
         </div>
       )}
 
-      {alert.status === 'queued' && (
-        <p className="hint">
-          {alert.executionNote ?? '최종확인됨 · 다음 정규장에 자동 주문'}
-        </p>
-      )}
+      {isQueued && alert.executionNote && <p className="hint">{alert.executionNote}</p>}
 
       <footer>
         <button
           type="button"
           className="ghost"
-          disabled={busy || alert.status !== 'pending'}
+          disabled={busy || (alert.status !== 'pending' && alert.status !== 'queued')}
           onClick={() => onDeny(alert)}
         >
-          이 종목만 빼기
+          {isQueued ? '예약 취소' : '이 종목만 빼기'}
         </button>
       </footer>
     </article>
@@ -180,13 +197,14 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [refresh]);
 
-  // 알림 탭 → /#confirm : 최종 확인 버튼으로 스크롤
+  // 알림 탭 → /#confirm : 예약 패널 또는 최종 확인으로 스크롤
   useEffect(() => {
     if (loading || !dash) return;
     if (window.location.hash !== '#confirm') return;
     setHighlightConfirm(true);
+    const hasQueued = (dash.pendingAlerts ?? []).some((a) => a.status === 'queued');
     const t = window.setTimeout(() => {
-      document.getElementById('confirm-panel')?.scrollIntoView({
+      document.getElementById(hasQueued ? 'queued-panel' : 'confirm-panel')?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
@@ -217,12 +235,23 @@ export default function App() {
       const data = await confirmAllPending();
       setDash(data);
       const failN = data.failed?.length ?? 0;
+      const queuedN = (data.pendingAlerts ?? []).filter((a) => a.status === 'queued').length;
       setNotice(
         data.notice ??
           (failN
             ? `${data.confirmedCount ?? 0}건 성공/예약, ${failN}건 실패`
-            : `${data.confirmedCount ?? 0}건 최종 확인 (장외면 다음 장 예약)`),
+            : queuedN > 0
+              ? `${queuedN}건 예약 확정 · 위 「예약 확인」에서 볼 수 있습니다`
+              : `${data.confirmedCount ?? 0}건 최종 확인 완료`),
       );
+      if (queuedN > 0) {
+        window.setTimeout(() => {
+          document.getElementById('queued-panel')?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        }, 80);
+      }
       if (failN > 0 && data.failed?.[0]) {
         setError(data.failed.map((f) => `${f.symbol}: ${f.error}`).slice(0, 2).join(' · '));
       }
@@ -243,7 +272,11 @@ export default function App() {
     setError(null);
     try {
       setDash(await actOnAlert(alert.id, undefined, 'skip'));
-      setNotice(`${alert.name}을(를) 목록에서 뺐습니다.`);
+      setNotice(
+        alert.status === 'queued'
+          ? `${alert.name} 예약을 취소했습니다.`
+          : `${alert.name}을(를) 목록에서 뺐습니다.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : '처리 실패');
     } finally {
@@ -342,6 +375,8 @@ export default function App() {
   }
 
   const connected = dash.broker.configured && dash.broker.connected;
+  const executeTime = dash.schedule?.executeQueued?.timeKst ?? '09:05';
+  const queuedTotal = queued.reduce((s, a) => s + (a.suggestedAmount || 0), 0);
 
   return (
     <div className="page">
@@ -354,16 +389,24 @@ export default function App() {
         </div>
         <p
           className={`badge ${
-            dash.risk?.killSwitchActive ? 'live' : connected ? 'ok' : ''
+            queued.length > 0
+              ? 'queued'
+              : dash.risk?.killSwitchActive
+                ? 'live'
+                : connected
+                  ? 'ok'
+                  : ''
           }`}
         >
-          {dash.risk?.killSwitchActive
-            ? '일손실 잠금'
-            : connected
-              ? '실주문 가능'
-              : dash.broker.configured
-                ? '토스 연결 실패'
-                : '모의투자'}
+          {queued.length > 0
+            ? `예약 ${queued.length}건`
+            : dash.risk?.killSwitchActive
+              ? '일손실 잠금'
+              : connected
+                ? '실주문 가능'
+                : dash.broker.configured
+                  ? '토스 연결 실패'
+                  : '모의투자'}
         </p>
       </header>
 
@@ -513,6 +556,48 @@ export default function App() {
           </section>
         )}
 
+        {queued.length > 0 && (
+          <section id="queued-panel" className="panel queue-panel" aria-live="polite">
+            <div className="controls-head">
+              <div>
+                <h2>예약 확인</h2>
+                <p>
+                  {queued.length}건 예약됨 · 합계 약 {money(queuedTotal, dash.currency)} · 평일{' '}
+                  {executeTime} KST 자동 주문
+                </p>
+              </div>
+              <p className="badge queued">예약 확정</p>
+            </div>
+            <p className="hint">
+              최종 확인이 반영된 주문입니다. 개장 시각에 서버가 자동 실행합니다. 원하지 않으면
+              「예약 취소」를 누르세요.
+            </p>
+            <ul className="queue-summary">
+              {queued.map((a) => (
+                <li key={`qsum-${a.id}`}>
+                  <strong>
+                    {a.side === 'buy' ? '매수' : '매도'} {a.name}
+                  </strong>
+                  <span>{a.symbol}</span>
+                  <em>{money(a.suggestedAmount, a.currency)}</em>
+                </li>
+              ))}
+            </ul>
+            <div className="alert-list">
+              {queued.map((a) => (
+                <ProposalCard
+                  key={a.id}
+                  alert={a}
+                  busyId={busyId}
+                  confirmingAll={confirmingAll}
+                  onDeny={onDeny}
+                  executeTime={executeTime}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section
           id="confirm-panel"
           className={`panel ${highlightConfirm ? 'confirm-focus' : ''}`}
@@ -521,17 +606,11 @@ export default function App() {
             <div>
               <h2>오늘의 제안</h2>
               <p>
-                {pending.length === 0 && queued.length === 0
-                  ? '대기 없음'
-                  : [
-                      pending.length ? `확인 대기 ${pending.length}건` : null,
-                      queued.length ? `장 예약 ${queued.length}건` : null,
-                      pending.length
-                        ? `합계 약 ${money(pendingTotal, dash.currency)}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                {pending.length === 0
+                  ? queued.length > 0
+                    ? '확인 대기 없음 · 위 예약 확인 참고'
+                    : '대기 없음'
+                  : `확인 대기 ${pending.length}건 · 합계 약 ${money(pendingTotal, dash.currency)}`}
               </p>
             </div>
             <div className="controls-actions">
@@ -552,25 +631,27 @@ export default function App() {
             </div>
           </div>
 
-          {pending.length === 0 && queued.length === 0 ? (
+          {pending.length === 0 ? (
             <p className="empty">
-              대기 중인 주문이 없습니다. 평일 {dash.schedule?.timeKst ?? '17:30'} KST에 자동으로
-              분석됩니다.
+              {queued.length > 0
+                ? `예약 ${queued.length}건은 위 「예약 확인」에서 볼 수 있습니다.`
+                : `대기 중인 주문이 없습니다. 평일 ${dash.schedule?.timeKst ?? '17:30'} KST에 자동으로 분석됩니다.`}
             </p>
           ) : (
             <>
               <p className="hint">
-                장외(15:30 이후·주말)에 확인하면 <strong>다음 장 09:05</strong>에 자동 주문됩니다.
-                매도 제안이 있으면 당일은 매도만, 매수는 현금 한도 안입니다.
+                장외에 확인하면 <strong>다음 장 {executeTime}</strong>에 예약됩니다. 매도 우선 ·
+                매수는 현금 한도 안입니다.
               </p>
               <div className="alert-list">
-                {[...queued, ...pending].map((a) => (
+                {pending.map((a) => (
                   <ProposalCard
                     key={a.id}
                     alert={a}
                     busyId={busyId}
                     confirmingAll={confirmingAll}
                     onDeny={onDeny}
+                    executeTime={executeTime}
                   />
                 ))}
               </div>

@@ -184,17 +184,22 @@ export async function actOnAlert(
   if (alert.status === 'executing') {
     throw new ExecuteError('이미 주문 처리 중입니다. 체결/거부 결과를 확인한 뒤 다시 시도하세요.');
   }
-  const canRun =
-    alert.status === 'pending' || (opts.fromQueue && alert.status === 'queued');
-  if (!canRun) throw new ExecuteError('이미 처리된 알림입니다.');
 
   if (action === 'skip') {
+    if (alert.status !== 'pending' && alert.status !== 'queued') {
+      throw new ExecuteError('이미 처리된 알림입니다.');
+    }
+    const wasQueued = alert.status === 'queued';
     alert.status = 'skipped';
     alert.actedAt = new Date().toISOString();
-    alert.executionNote = '사용자가 거절함';
+    alert.executionNote = wasQueued ? '예약 취소됨' : '사용자가 거절함';
     saveState(state);
     return { state, alert };
   }
+
+  const canRun =
+    alert.status === 'pending' || (opts.fromQueue && alert.status === 'queued');
+  if (!canRun) throw new ExecuteError('이미 처리된 알림입니다.');
 
   // 예약 실행(fromQueue)은 이미 최종확인된 건 — confirm 문구 재요구 안 함
   if (!opts.fromQueue) {
