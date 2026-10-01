@@ -431,11 +431,17 @@ app.delete('/api/push/subscribe', (req, res) => {
 
 app.post('/api/push/test', async (_req, res) => {
   try {
+    const pending = loadState().alerts.filter((a) => a.status === 'pending').length;
     const result = await sendPushToAll({
       title: 'TRADERS AI · 테스트',
-      body: '알림이 오면 성공입니다. 탭하면 최종 확인 화면으로 이동합니다.',
+      body:
+        pending > 0
+          ? `대기 ${pending}건. 알림의 「최종 확인」을 눌러 바로 주문할 수 있습니다.`
+          : '알림의 「최종 확인」 버튼이 보이는지 확인하세요. (현재 대기 없음)',
       url: '/#confirm',
       tag: 'traders-ai-test',
+      showConfirmAction: true,
+      pending,
     });
     res.json({ ok: true, ...result, notify: getNotifyInfo() });
   } catch (err) {

@@ -146,6 +146,17 @@ export default function App() {
       .catch(() => undefined);
   }, []);
 
+  // 알림창 「최종 확인」 후 SW가 앱에 결과 전달
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.data?.type !== 'traders-ai:confirmed') return;
+      setNotice(typeof ev.data.notice === 'string' ? ev.data.notice : '최종 확인 완료');
+      refresh().catch(() => undefined);
+    }
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, [refresh]);
+
   // 스케줄 결과 반영용 주기 갱신
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -372,7 +383,7 @@ export default function App() {
           <p className="hint">
             {dash.notify?.nextHint ?? '평일 18:00 KST에 휴대폰 알림'}
             {pushOn
-              ? ' · 알림 등록됨'
+              ? ' · 알림의 「최종 확인」으로 바로 주문'
               : ' · 한 번만 「휴대폰 알림 켜기」'}
             {(dash.notify?.subscriptionCount ?? 0) > 0
               ? ` · 서버 구독 ${dash.notify?.subscriptionCount}개`

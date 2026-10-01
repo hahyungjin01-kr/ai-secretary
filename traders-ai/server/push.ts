@@ -103,6 +103,8 @@ export interface NotifyPayload {
   body: string;
   url?: string;
   tag?: string;
+  showConfirmAction?: boolean;
+  pending?: number;
 }
 
 export async function sendPushToAll(payload: NotifyPayload): Promise<{
@@ -119,6 +121,8 @@ export async function sendPushToAll(payload: NotifyPayload): Promise<{
     body: payload.body,
     url: payload.url ?? '/#confirm',
     tag: payload.tag ?? 'traders-ai-confirm',
+    showConfirmAction: payload.showConfirmAction !== false,
+    pending: payload.pending ?? 0,
   });
 
   let sent = 0;
@@ -164,15 +168,19 @@ export async function sendDailyConfirmReminder(): Promise<{
     pending > 0
       ? {
           title: 'TRADERS AI · 최종 확인',
-          body: `오늘 제안 ${pending}건 대기 중. 탭한 뒤 확인 버튼만 누르세요.`,
+          body: `오늘 제안 ${pending}건 대기. 알림의 「최종 확인」을 누르세요.`,
           url: '/#confirm',
           tag: 'traders-ai-confirm',
+          showConfirmAction: true,
+          pending,
         }
       : {
           title: 'TRADERS AI',
           body: '오늘 대기 제안이 없습니다.',
           url: '/',
           tag: 'traders-ai-idle',
+          showConfirmAction: false,
+          pending: 0,
         };
 
   const result = await sendPushToAll(payload);
