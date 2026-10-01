@@ -61,6 +61,24 @@ export function resolveTossConfig(): {
   };
 }
 
+function isInvalidTokenError(status: number, message: string): boolean {
+  if (status === 401) return true;
+  return /유효하지 않은 토큰|invalid.?token|token.*(expired|revoked|invalid)|최신 토큰으로 다시/i.test(
+    message,
+  );
+}
+
+/** 프로세스 전역 토큰 — 인스턴스마다 새로 발급하면 이전 토큰이 즉시 무효화됨 */
+const sharedToken: {
+  access: string | null;
+  expiresAt: number;
+  inflight: Promise<string> | null;
+} = {
+  access: null,
+  expiresAt: 0,
+  inflight: null,
+};
+
 export class TossBroker implements BrokerClient {
   readonly provider = 'toss' as const;
   readonly venue: BrokerVenue = 'toss';
@@ -69,8 +87,6 @@ export class TossBroker implements BrokerClient {
   private readonly baseUrl: string;
   private preferredAccountSeq: number | null;
   private liveArmed: boolean;
-  private token: string | null = null;
-  private tokenExpiresAt = 0;
   private resolvedAccountSeq: number | null = null;
 
   constructor(
@@ -88,10 +104,32 @@ export class TossBroker implements BrokerClient {
     this.liveArmed = armed;
   }
 
-  private async getAccessToken(): Promise<string> {
-    const now = Date.now();
-    if (this.token && now < this.tokenExpiresAt - 60_000) return this.token;
+  private clearToken() {
+    sharedToken.access = null;
+    sharedToken.expiresAt = 0;
+  }
 
+  private async getAccessToken(force = false): Promise<string> {
+    if (sharedToken.inflight) {
+      try {
+        await sharedToken.inflight;
+      } catch {
+        // ignore; may re-fetch below
+      }
+    }
+    const now = Date.now();
+    if (!force && sharedToken.access && now < sharedToken.expiresAt - 60_000) {
+      return sharedToken.access;
+    }
+    if (force) this.clearToken();
+
+    sharedToken.inflight = this.fetchAccessToken().finally(() => {
+      sharedToken.inflight = null;
+    });
+    return sharedToken.inflight;
+  }
+
+  private async fetchAccessToken(): Promise<string> {
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: this.clientId,
@@ -113,8 +151,8 @@ export class TossBroker implements BrokerClient {
       if (res.ok) {
         const access = String(data.access_token || '');
         if (!access) throw new BrokerError('토스 access_token 이 비어 있습니다.');
-        this.token = access;
-        this.tokenExpiresAt = Date.now() + num(data.expires_in, 3600) * 1000;
+        sharedToken.access = access;
+        sharedToken.expiresAt = Date.now() + num(data.expires_in, 3600) * 1000;
         return access;
       }
 
@@ -138,23 +176,28 @@ export class TossBroker implements BrokerClient {
     init: RequestInit = {},
     opts: { account?: boolean } = {},
   ): Promise<T> {
-    const token = await this.getAccessToken();
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      ...(init.headers as Record<string, string> | undefined),
+    let token = await this.getAccessToken();
+    const buildHeaders = (bearer: string): Record<string, string> => {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${bearer}`,
+        Accept: 'application/json',
+        ...(init.headers as Record<string, string> | undefined),
+      };
+      if (init.body && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+      return headers;
     };
 
-    if (opts.account) {
-      const seq = await this.resolveAccountSeq();
-      headers['X-Tossinvest-Account'] = String(seq);
-    }
-    if (init.body && !headers['Content-Type']) {
-      headers['Content-Type'] = 'application/json';
-    }
-
     let lastErr = `토스 API 오류`;
+    let refreshed = false;
+
     for (let attempt = 1; attempt <= 4; attempt++) {
+      const headers = buildHeaders(token);
+      if (opts.account) {
+        headers['X-Tossinvest-Account'] = String(await this.resolveAccountSeq());
+      }
+
       const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
       const json = await res.json().catch(() => ({}));
       const data = asRecord(json);
@@ -162,9 +205,16 @@ export class TossBroker implements BrokerClient {
 
       const err = asRecord(data.error);
       lastErr = String(err.message || data.message || `토스 API 오류 (${res.status})`);
+
+      if (!refreshed && isInvalidTokenError(res.status, lastErr)) {
+        refreshed = true;
+        this.clearToken();
+        token = await this.getAccessToken(true);
+        continue;
+      }
+
       const retryable =
-        res.status === 429 ||
-        /한도|rate|too many|요청 한도/i.test(lastErr);
+        res.status === 429 || /한도|rate|too many|요청 한도/i.test(lastErr);
       if (!retryable || attempt === 4) break;
       const waitMs = Number(res.headers.get('retry-after') || 0) * 1000 || 1200 * attempt;
       await new Promise((r) => setTimeout(r, waitMs));

@@ -4,10 +4,29 @@ import type { BrokerClient, BrokerStatus, BrokerVenue } from './types.js';
 export type { BrokerClient, BrokerStatus, BrokerVenue } from './types.js';
 export { BrokerError } from './toss.js';
 
+let singleton: TossBroker | null = null;
+let singletonKey: string | null = null;
+
+function configKey(cfg: NonNullable<ReturnType<typeof resolveTossConfig>>): string {
+  return `${cfg.clientId}|${cfg.clientSecret}|${cfg.baseUrl}|${cfg.accountSeq ?? ''}`;
+}
+
+/** 프로세스당 브로커 1개 — 요청마다 새로 만들면 토큰이 서로 무효화됨 */
 export function getBroker(liveArmed: boolean): BrokerClient | null {
   const cfg = resolveTossConfig();
-  if (!cfg) return null;
-  return new TossBroker(cfg, liveArmed);
+  if (!cfg) {
+    singleton = null;
+    singletonKey = null;
+    return null;
+  }
+  const key = configKey(cfg);
+  if (!singleton || singletonKey !== key) {
+    singleton = new TossBroker(cfg, liveArmed);
+    singletonKey = key;
+  } else {
+    singleton.setLiveArmed(liveArmed);
+  }
+  return singleton;
 }
 
 export function brokerConfigSummary(): {
