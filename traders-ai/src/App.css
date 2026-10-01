@@ -414,6 +414,22 @@ button.primary.big {
   padding: 1.15rem 1.2rem 1.3rem;
 }
 
+.panel.confirm-focus {
+  outline: 2px solid rgba(11, 110, 79, 0.45);
+  outline-offset: 3px;
+  animation: confirm-pulse 1.2s ease 2;
+}
+
+@keyframes confirm-pulse {
+  0%,
+  100% {
+    box-shadow: var(--shadow);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(11, 110, 79, 0.12), var(--shadow);
+  }
+}
+
 .panel h2 {
   margin: 0 0 0.85rem;
   font-family: Syne, 'IBM Plex Sans', sans-serif;

@@ -1,0 +1,19 @@
+{
+  "name": "TRADERS AI",
+  "short_name": "TRADERS AI",
+  "description": "평일 자동 분석 후 최종 확인 한 번으로 주문",
+  "start_url": "/#confirm",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#dfe8e4",
+  "theme_color": "#0b6e4f",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

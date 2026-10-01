@@ -17,6 +17,16 @@ import {
   lockLiveTrading,
 } from './risk.js';
 import { getScheduleInfo, startDailyScheduler } from './scheduler.js';
+import {
+  getNotifyInfo,
+  getVapidPublicKey,
+  initPush,
+  removeSubscription,
+  sendDailyConfirmReminder,
+  sendPushToAll,
+  upsertSubscription,
+  type PushSubscriptionJSON,
+} from './push.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -82,6 +92,7 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     paperTrading,
     risk,
     schedule: getScheduleInfo(),
+    notify: getNotifyInfo(),
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer:
@@ -382,6 +393,65 @@ app.post('/api/review', async (_req, res) => {
   });
 });
 
+app.get('/api/push/vapid-public-key', (_req, res) => {
+  try {
+    res.json({ publicKey: getVapidPublicKey(), notify: getNotifyInfo() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'VAPID 오류' });
+  }
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  try {
+    const sub = req.body?.subscription as PushSubscriptionJSON | undefined;
+    if (!sub) {
+      res.status(400).json({ error: 'subscription 이 필요합니다.' });
+      return;
+    }
+    const count = upsertSubscription(sub);
+    res.json({ ok: true, subscriptionCount: count, notify: getNotifyInfo() });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '구독 실패' });
+  }
+});
+
+app.delete('/api/push/subscribe', (req, res) => {
+  try {
+    const endpoint = String(req.body?.endpoint ?? '');
+    if (!endpoint) {
+      res.status(400).json({ error: 'endpoint 가 필요합니다.' });
+      return;
+    }
+    const count = removeSubscription(endpoint);
+    res.json({ ok: true, subscriptionCount: count, notify: getNotifyInfo() });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '구독 해제 실패' });
+  }
+});
+
+app.post('/api/push/test', async (_req, res) => {
+  try {
+    const result = await sendPushToAll({
+      title: 'TRADERS AI · 테스트',
+      body: '알림이 오면 성공입니다. 탭하면 최종 확인 화면으로 이동합니다.',
+      url: '/#confirm',
+      tag: 'traders-ai-test',
+    });
+    res.json({ ok: true, ...result, notify: getNotifyInfo() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : '테스트 알림 실패' });
+  }
+});
+
+app.post('/api/push/remind-now', async (_req, res) => {
+  try {
+    const result = await sendDailyConfirmReminder();
+    res.json({ ok: true, ...result, notify: getNotifyInfo() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : '알림 실패' });
+  }
+});
+
 const distDir = path.resolve(__dirname, '../dist');
 app.use(express.static(distDir));
 app.get(/^(?!\/api).*/, (_req, res) => {
@@ -402,6 +472,11 @@ app.listen(PORT, HOST, () => {
     }
   } catch (err) {
     console.error('[boot] clear live arm', err);
+  }
+  try {
+    initPush();
+  } catch (err) {
+    console.error('[boot] push init', err);
   }
   console.log(`Traders AI listening on http://${HOST}:${PORT}`);
   console.log(

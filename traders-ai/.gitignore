@@ -1,6 +1,8 @@
 node_modules
 dist
 data/state.json
+data/vapid.json
+data/push-subscriptions.json
 .env
 .env.local
 *.log

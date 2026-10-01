@@ -93,6 +93,15 @@ export interface BrokerAccount {
   accountBlocked: boolean;
 }
 
+export interface NotifyInfo {
+  enabled: boolean;
+  timeKst: string;
+  timezone: string;
+  subscriptionCount: number;
+  vapidReady: boolean;
+  nextHint: string;
+}
+
 export interface BrokerStatus {
   configured: boolean;
   connected: boolean;
@@ -153,7 +162,12 @@ export interface Dashboard {
     lastAttemptAt: string | null;
     lastResult: string | null;
     nextHint: string;
+    notify?: NotifyInfo & {
+      lastAttemptAt: string | null;
+      lastResult: string | null;
+    };
   };
+  notify?: NotifyInfo;
   broker: BrokerStatus;
   disclaimer: string;
   approvePhrase?: string;
@@ -273,6 +287,80 @@ export async function syncBroker(): Promise<Dashboard> {
       body: '{}',
     }),
   );
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+export async function enablePhoneNotify(): Promise<{ ok: true; endpoint: string }> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('이 브라우저는 푸시 알림을 지원하지 않습니다. Chrome/Android 또는 홈 화면 추가(iOS)를 사용하세요.');
+  }
+  if (!window.isSecureContext) {
+    throw new Error('알림은 HTTPS(또는 localhost)에서만 켤 수 있습니다.');
+  }
+
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    throw new Error('알림 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.');
+  }
+
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+
+  const { publicKey } = await parse<{ publicKey: string }>(
+    await apiFetch('/api/push/vapid-public-key', { headers: apiHeaders(false) }),
+  );
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+    });
+  }
+
+  await parse(
+    await apiFetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ subscription: sub.toJSON() }),
+    }),
+  );
+
+  return { ok: true, endpoint: sub.endpoint };
+}
+
+export async function sendTestNotify(): Promise<{ sent: number; failed: number }> {
+  return parse(
+    await apiFetch('/api/push/test', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: '{}',
+    }),
+  );
+}
+
+export async function getPushStatus(): Promise<{
+  subscribed: boolean;
+  permission: NotificationPermission | 'unsupported';
+}> {
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { subscribed: false, permission: 'unsupported' };
+  }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    return { subscribed: Boolean(sub), permission: Notification.permission };
+  } catch {
+    return { subscribed: false, permission: Notification.permission };
+  }
 }
 
 export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashboard> {

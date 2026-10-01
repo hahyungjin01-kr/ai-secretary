@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   actOnAlert,
   confirmAllPending,
+  enablePhoneNotify,
   fetchDashboard,
+  getPushStatus,
+  sendTestNotify,
   syncBroker,
   updateSettings,
   type DailyAlert,
@@ -122,6 +125,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [brokerBusy, setBrokerBusy] = useState(false);
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [pushOn, setPushOn] = useState(false);
+  const [highlightConfirm, setHighlightConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
@@ -134,6 +140,12 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [refresh]);
 
+  useEffect(() => {
+    getPushStatus()
+      .then((s) => setPushOn(s.subscribed && s.permission === 'granted'))
+      .catch(() => undefined);
+  }, []);
+
   // 스케줄 결과 반영용 주기 갱신
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -141,6 +153,20 @@ export default function App() {
     }, 60_000);
     return () => window.clearInterval(id);
   }, [refresh]);
+
+  // 알림 탭 → /#confirm : 최종 확인 버튼으로 스크롤
+  useEffect(() => {
+    if (loading || !dash) return;
+    if (window.location.hash !== '#confirm') return;
+    setHighlightConfirm(true);
+    const t = window.setTimeout(() => {
+      document.getElementById('confirm-panel')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [loading, dash]);
 
   const pending = (dash?.pendingAlerts ?? []).filter((a) => a.status === 'pending');
   const pendingTotal = pending.reduce((s, a) => s + (a.suggestedAmount || 0), 0);
@@ -209,6 +235,38 @@ export default function App() {
       setError(e instanceof Error ? e.message : '동기화 실패');
     } finally {
       setBrokerBusy(false);
+    }
+  }
+
+  async function onEnableNotify() {
+    setNotifyBusy(true);
+    setError(null);
+    try {
+      await enablePhoneNotify();
+      setPushOn(true);
+      setDash(await fetchDashboard());
+      setNotice('휴대폰 알림이 켜졌습니다. 테스트 알림으로 확인해 보세요.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '알림 설정 실패');
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
+
+  async function onTestNotify() {
+    setNotifyBusy(true);
+    setError(null);
+    try {
+      const r = await sendTestNotify();
+      setNotice(
+        r.sent > 0
+          ? `테스트 알림 ${r.sent}건 전송. 휴대폰 알림함을 확인하세요.`
+          : '등록된 구독이 없습니다. 먼저 「휴대폰 알림 켜기」를 누르세요.',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '테스트 알림 실패');
+    } finally {
+      setNotifyBusy(false);
     }
   }
 
@@ -297,7 +355,29 @@ export default function App() {
             >
               {brokerBusy ? '동기화…' : '잔고 새로고침'}
             </button>
+            <button
+              type="button"
+              className="ghost"
+              disabled={notifyBusy}
+              onClick={onEnableNotify}
+            >
+              {notifyBusy ? '설정 중…' : pushOn ? '알림 다시 등록' : '휴대폰 알림 켜기'}
+            </button>
+            {pushOn && (
+              <button type="button" className="ghost" disabled={notifyBusy} onClick={onTestNotify}>
+                테스트 알림
+              </button>
+            )}
           </div>
+          <p className="hint">
+            {dash.notify?.nextHint ?? '평일 18:00 KST에 휴대폰 알림'}
+            {pushOn
+              ? ' · 알림 등록됨'
+              : ' · 한 번만 「휴대폰 알림 켜기」'}
+            {(dash.notify?.subscriptionCount ?? 0) > 0
+              ? ` · 서버 구독 ${dash.notify?.subscriptionCount}개`
+              : ''}
+          </p>
 
           <label className="mode-inline">
             성향
@@ -362,7 +442,10 @@ export default function App() {
           </section>
         )}
 
-        <section className="panel">
+        <section
+          id="confirm-panel"
+          className={`panel ${highlightConfirm ? 'confirm-focus' : ''}`}
+        >
           <div className="controls-head">
             <div>
               <h2>오늘의 제안</h2>
