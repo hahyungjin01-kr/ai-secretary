@@ -224,6 +224,22 @@ export async function actOnAlert(
   );
 }
 
+export async function confirmAllPending(): Promise<
+  Dashboard & {
+    confirmedCount?: number;
+    failed?: { id: string; symbol: string; error: string }[];
+    notice?: string;
+  }
+> {
+  return parse(
+    await fetch('/api/alerts/confirm-all', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ confirm: '최종확인' }),
+    }),
+  );
+}
+
 export async function syncBroker(): Promise<Dashboard> {
   return parse(
     await fetch('/api/broker/sync', {

@@ -4,7 +4,8 @@
  * - 실주문은 본문에 confirm: "허락" 필수
  */
 
-export const APPROVE_PHRASE = '허락';
+/** 최종 확인 버튼이 보내는 값 (사용자 타이핑 불필요) */
+export const APPROVE_PHRASE = '최종확인';
 
 export function accessTokenConfigured(): boolean {
   return Boolean((process.env.TRADERS_AI_TOKEN || '').trim());
@@ -29,10 +30,11 @@ export function checkApproveConfirm(
   const c = String(confirm ?? '')
     .trim()
     .replace(/\s+/g, '');
-  if (c !== APPROVE_PHRASE) {
+  // 하위 호환: 예전 "허락"도 허용
+  if (c !== APPROVE_PHRASE && c !== '허락') {
     return {
       ok: false,
-      error: `실주문 승인에는 confirm 값으로 "${APPROVE_PHRASE}" 를 보내야 합니다.`,
+      error: '실주문에는 최종 확인이 필요합니다.',
     };
   }
   return { ok: true };

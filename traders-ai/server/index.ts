@@ -9,7 +9,7 @@ import { runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
-import { accessTokenConfigured, checkAccessToken } from './security.js';
+import { APPROVE_PHRASE, accessTokenConfigured, checkAccessToken } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -69,7 +69,7 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     alerts: state.alerts,
     pendingAlerts: state.alerts.filter((a) => a.status === 'pending' || a.status === 'executing'),
     accessTokenRequired: accessTokenConfigured(),
-    approvePhrase: '허락',
+    approvePhrase: APPROVE_PHRASE,
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
     lastDailyRunDate: state.lastDailyRunDate,
@@ -83,8 +83,8 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer: usingBroker
-      ? '토스 연동: 사전거래 MoA(장운영·괴리·자금·악마의변호인) 통과 후, confirm「허락」일 때만 건별 주문합니다. 수익 보장 없음.'
-      : '로컬 모의투자입니다. .env에 토스 키를 넣으면 실계좌 연동. 주문 전 사전거래 MoA 게이트가 적용됩니다.',
+      ? '토스 연동: 사전거래 MoA 통과 후 「최종 확인」 버튼 한 번으로 대기 주문을 실행합니다. 수익 보장 없음.'
+      : '로컬 모의투자입니다. .env에 토스 키를 넣으면 실계좌 연동. 「최종 확인」으로 대기 주문을 실행합니다.',
   };
 }
 
@@ -270,6 +270,59 @@ app.post('/api/daily/run', requireAccessToken, async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : '일일 분석 실패';
     console.error('[/api/daily/run]', message);
+    res.status(500).json({ error: message });
+  }
+});
+
+/** 대기 중인 제안을 최종 확인 한 번에 순차 실행 */
+app.post('/api/alerts/confirm-all', requireAccessToken, async (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm ?? APPROVE_PHRASE);
+    const state0 = loadState();
+    const pending = state0.alerts.filter((a) => a.status === 'pending');
+    if (pending.length === 0) {
+      const marks = await markPrices(state0);
+      res.json({
+        ...(await publicState(state0, marks)),
+        confirmedCount: 0,
+        failed: [],
+        skippedReason: '대기 중인 주문이 없습니다.',
+      });
+      return;
+    }
+
+    const failed: { id: string; symbol: string; error: string }[] = [];
+    let confirmedCount = 0;
+    let lastState = state0;
+
+    for (const alert of pending) {
+      try {
+        const result = await actOnAlert(alert.id, 0, 'execute', confirm);
+        lastState = result.state;
+        confirmedCount += 1;
+      } catch (err) {
+        failed.push({
+          id: alert.id,
+          symbol: alert.symbol,
+          error: err instanceof Error ? err.message : '실패',
+        });
+        lastState = loadState();
+      }
+    }
+
+    const marks = await markPrices(lastState);
+    res.json({
+      ...(await publicState(lastState, marks)),
+      confirmedCount,
+      failed,
+      notice:
+        failed.length === 0
+          ? `${confirmedCount}건 최종 확인·주문 완료`
+          : `${confirmedCount}건 성공, ${failed.length}건 실패(재분석/장외 등)`,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '최종 확인 실패';
+    console.error('[/api/alerts/confirm-all]', message);
     res.status(500).json({ error: message });
   }
 });

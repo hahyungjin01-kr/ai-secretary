@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   actOnAlert,
+  confirmAllPending,
   fetchDashboard,
   getAccessToken,
   runDaily,
@@ -25,21 +26,19 @@ function money(n: number, currency = 'KRW') {
   }
 }
 
-function ApprovalCard({
+function ProposalCard({
   alert,
   busyId,
-  onApprove,
+  confirmingAll,
   onDeny,
 }: {
   alert: DailyAlert;
   busyId: string | null;
-  onApprove: (alert: DailyAlert, confirm: string) => void;
+  confirmingAll: boolean;
   onDeny: (alert: DailyAlert) => void;
 }) {
-  const [confirm, setConfirm] = useState('');
-  const busy = busyId === alert.id || alert.status === 'executing';
+  const busy = busyId === alert.id || alert.status === 'executing' || confirmingAll;
   const isBuy = alert.side === 'buy';
-  const canApprove = confirm.trim() === '허락' && alert.status === 'pending';
 
   return (
     <article className={`alert-card ${alert.side}`}>
@@ -49,8 +48,8 @@ function ApprovalCard({
             {alert.status === 'executing'
               ? '주문 처리 중'
               : isBuy
-                ? '매수 허락 요청'
-                : '매도 허락 요청'}
+                ? '매수 제안'
+                : '매도 제안'}
           </p>
           <h3>
             {alert.name} <span>{alert.symbol}</span>
@@ -101,51 +100,17 @@ function ApprovalCard({
               <strong>악마의 변호인</strong> {alert.devilSummary}
             </p>
           )}
-          {(alert.devilChallenges?.length ?? 0) > 0 && (
-            <ul className="devil-list">
-              {alert.devilChallenges!.slice(0, 3).map((c) => (
-                <li key={c.id}>
-                  <span className={`sev ${c.severity}`}>{c.severity}</span> {c.counter}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 
-      {alert.status === 'pending' && (
-        <label className="confirm-box">
-          실주문하려면 아래에 <strong>허락</strong> 입력
-          <input
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            placeholder="허락"
-            autoComplete="off"
-            disabled={busy}
-          />
-        </label>
-      )}
-
       <footer>
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !canApprove}
-          onClick={() => onApprove(alert, confirm.trim())}
-        >
-          {busy
-            ? '처리 중…'
-            : isBuy
-              ? '사전검증 후 매수'
-              : '사전검증 후 매도'}
-        </button>
         <button
           type="button"
           className="ghost"
           disabled={busy || alert.status !== 'pending'}
           onClick={() => onDeny(alert)}
         >
-          거절
+          이 종목만 빼기
         </button>
       </footer>
     </article>
@@ -157,6 +122,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmingAll, setConfirmingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [brokerBusy, setBrokerBusy] = useState(false);
@@ -173,7 +139,8 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [refresh]);
 
-  const pending = dash?.pendingAlerts ?? [];
+  const pending = (dash?.pendingAlerts ?? []).filter((a) => a.status === 'pending');
+  const pendingTotal = pending.reduce((s, a) => s + (a.suggestedAmount || 0), 0);
 
   async function onMode(mode: TraderMode) {
     setError(null);
@@ -202,7 +169,7 @@ export default function App() {
         const n = data.createdCount ?? 0;
         setNotice(
           n > 0
-            ? `AI가 ${n}건을 골랐습니다. 아래에서 허락해 주세요.`
+            ? `AI가 ${n}건을 골랐습니다. 빼기만 하고 「최종 확인」을 누르세요.`
             : '오늘은 살 만한 종목이 없습니다.',
         );
       }
@@ -213,22 +180,33 @@ export default function App() {
     }
   }
 
-  async function onApprove(alert: DailyAlert, confirm: string) {
-    setBusyId(alert.id);
+  async function onConfirmAll() {
+    if (pending.length === 0) return;
+    setConfirmingAll(true);
     setError(null);
+    setNotice(null);
     try {
-      const data = await actOnAlert(alert.id, undefined, 'execute', confirm);
+      const data = await confirmAllPending();
       setDash(data);
-      setNotice(data.alert?.executionNote ?? '체결 완료');
+      const failN = data.failed?.length ?? 0;
+      setNotice(
+        data.notice ??
+          (failN
+            ? `${data.confirmedCount ?? 0}건 성공, ${failN}건 실패`
+            : `${data.confirmedCount ?? 0}건 최종 확인 완료`),
+      );
+      if (failN > 0 && data.failed?.[0]) {
+        setError(data.failed.map((f) => `${f.symbol}: ${f.error}`).slice(0, 2).join(' · '));
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '체결 실패');
+      setError(e instanceof Error ? e.message : '최종 확인 실패');
       try {
         setDash(await fetchDashboard());
       } catch {
         // ignore
       }
     } finally {
-      setBusyId(null);
+      setConfirmingAll(false);
     }
   }
 
@@ -237,7 +215,7 @@ export default function App() {
     setError(null);
     try {
       setDash(await actOnAlert(alert.id, undefined, 'skip'));
-      setNotice('거절했습니다.');
+      setNotice(`${alert.name}을(를) 목록에서 뺐습니다.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : '처리 실패');
     } finally {
@@ -287,7 +265,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand-block">
           <p className="brand">TRADERS AI</p>
-          <p className="brand-sub">계좌 돈으로 알아서 · 매수 전에만 허락</p>
+          <p className="brand-sub">계좌 돈으로 알아서 · 최종 확인 한 번</p>
         </div>
         <p className={`badge ${connected ? 'ok' : ''}`}>
           {connected ? '토스 계좌 연결' : dash.broker.configured ? '토스 연결 실패' : '모의투자'}
@@ -299,8 +277,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>알아서 투자합니다</h1>
             <p>
-              MoE→MoA→악마의 변호인으로 고른 뒤, 주문 직전 사전거래 MoA(장운영·가격괴리·자금·재검증)를
-              한 번 더 통과해야 합니다. 「허락」을 입력한 건만 주문됩니다.
+              AI가 종목을 고르면 목록만 확인하고, <strong>최종 확인</strong> 버튼 한 번으로
+              주문합니다. 종목마다 글을 칠 필요 없습니다.
             </p>
           </div>
 
@@ -392,21 +370,51 @@ export default function App() {
         )}
 
         <section className="panel">
-          <h2>허락이 필요한 주문</h2>
+          <div className="controls-head">
+            <div>
+              <h2>오늘의 제안</h2>
+              <p>
+                {pending.length === 0
+                  ? '대기 없음'
+                  : `${pending.length}건 · 합계 약 ${money(pendingTotal, dash.currency)}`}
+              </p>
+            </div>
+            <div className="controls-actions">
+              <button
+                type="button"
+                className="primary big"
+                disabled={confirmingAll || pending.length === 0}
+                onClick={onConfirmAll}
+              >
+                {confirmingAll
+                  ? '주문 처리 중…'
+                  : pending.length === 0
+                    ? '최종 확인'
+                    : `최종 확인 (${pending.length}건)`}
+              </button>
+            </div>
+          </div>
+
           {pending.length === 0 ? (
             <p className="empty">대기 중인 주문이 없습니다. 「AI에게 맡기기」를 누르세요.</p>
           ) : (
-            <div className="alert-list">
-              {pending.map((a) => (
-                <ApprovalCard
-                  key={a.id}
-                  alert={a}
-                  busyId={busyId}
-                  onApprove={onApprove}
-                  onDeny={onDeny}
-                />
-              ))}
-            </div>
+            <>
+              <p className="hint">
+                빼고 싶은 종목만 「이 종목만 빼기」한 뒤, 위 <strong>최종 확인</strong>을 한 번
+                누르면 됩니다.
+              </p>
+              <div className="alert-list">
+                {pending.map((a) => (
+                  <ProposalCard
+                    key={a.id}
+                    alert={a}
+                    busyId={busyId}
+                    confirmingAll={confirmingAll}
+                    onDeny={onDeny}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </section>
 
