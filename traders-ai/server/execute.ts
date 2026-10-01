@@ -103,14 +103,17 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
   const broker = getBroker(state.liveTradingArmed);
   if (!broker) return state;
 
-  const [account, positions] = await Promise.all([
-    broker.getAccount(),
-    broker.getPositions(),
-  ]);
+  const account = await broker.getAccount();
+  // ASSET rate limit — wait before holdings refetch in getPositions
+  await new Promise((r) => setTimeout(r, 1200));
+  const positions = await broker.getPositions();
 
   state.cash = round(account.cash);
   state.currency = account.currency || state.currency;
-  if (state.startingCash <= 0) state.startingCash = round(account.equity);
+  // 토스 실잔고 기준으로 시작자본도 맞춰 손익 표시가 어긋나지 않게 함
+  if (!state.startingCash || state.currency !== account.currency) {
+    state.startingCash = round(account.equity);
+  }
 
   const now = new Date().toISOString();
   state.positions = positions.map((p) => ({

@@ -98,23 +98,39 @@ export class TossBroker implements BrokerClient {
       client_secret: this.clientSecret,
     });
 
-    const res = await fetch(`${this.baseUrl}/oauth2/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-      body,
-    });
-    const data = asRecord(await res.json().catch(() => ({})));
-    if (!res.ok) {
-      const err = asRecord(data.error);
-      throw new BrokerError(
-        String(err.message || data.message || `토스 토큰 발급 실패 (${res.status})`),
+    // 이 환경은 출구 IP가 여러 개라 허용 IP 외 경로로 나가면 403이 날 수 있음 → 재시도
+    let lastErr = '토스 토큰 발급 실패';
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      const res = await fetch(`${this.baseUrl}/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body,
+      });
+      const data = asRecord(await res.json().catch(() => ({})));
+      if (res.ok) {
+        const access = String(data.access_token || '');
+        if (!access) throw new BrokerError('토스 access_token 이 비어 있습니다.');
+        this.token = access;
+        this.tokenExpiresAt = Date.now() + num(data.expires_in, 3600) * 1000;
+        return access;
+      }
+
+      const desc = String(
+        data.error_description ||
+          asRecord(data.error).message ||
+          data.message ||
+          `HTTP ${res.status}`,
       );
+      lastErr = desc;
+      const ipDenied =
+        res.status === 403 || /ip address not allowed/i.test(desc) || /access_denied/i.test(desc);
+      if (!ipDenied || attempt === 6) break;
+      await new Promise((r) => setTimeout(r, 250 * attempt));
     }
-    const access = String(data.access_token || '');
-    if (!access) throw new BrokerError('토스 access_token 이 비어 있습니다.');
-    this.token = access;
-    this.tokenExpiresAt = now + num(data.expires_in, 3600) * 1000;
-    return access;
+    throw new BrokerError(`토스 토큰 발급 실패: ${lastErr}`);
   }
 
   private async request<T>(
@@ -137,17 +153,23 @@ export class TossBroker implements BrokerClient {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
-    const json = await res.json().catch(() => ({}));
-    const data = asRecord(json);
+    let lastErr = `토스 API 오류`;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
+      const json = await res.json().catch(() => ({}));
+      const data = asRecord(json);
+      if (res.ok) return json as T;
 
-    if (!res.ok) {
       const err = asRecord(data.error);
-      throw new BrokerError(
-        String(err.message || data.message || `토스 API 오류 (${res.status})`),
-      );
+      lastErr = String(err.message || data.message || `토스 API 오류 (${res.status})`);
+      const retryable =
+        res.status === 429 ||
+        /한도|rate|too many|요청 한도/i.test(lastErr);
+      if (!retryable || attempt === 4) break;
+      const waitMs = Number(res.headers.get('retry-after') || 0) * 1000 || 1200 * attempt;
+      await new Promise((r) => setTimeout(r, waitMs));
     }
-    return json as T;
+    throw new BrokerError(lastErr);
   }
 
   private async resolveAccountSeq(): Promise<number> {
@@ -190,21 +212,23 @@ export class TossBroker implements BrokerClient {
     const seq = await this.resolveAccountSeq();
     const selected = accounts.find((a) => a.accountSeq === seq) ?? accounts[0];
 
-    const [bpKrw, holdings] = await Promise.all([
-      this.request<{ result?: Record<string, unknown> }>(
-        '/api/v1/buying-power?currency=KRW',
-        {},
-        { account: true },
-      ),
-      this.request<{ result?: Record<string, unknown> }>(
-        '/api/v1/holdings',
-        {},
-        { account: true },
-      ),
-    ]);
+    // ACCOUNT/ASSET rate limits are tight — call sequentially with small gaps
+    await new Promise((r) => setTimeout(r, 1100));
+    const bpKrw = await this.request<{ result?: Record<string, unknown> }>(
+      '/api/v1/buying-power?currency=KRW',
+      {},
+      { account: true },
+    );
+    await new Promise((r) => setTimeout(r, 1100));
+    const holdings = await this.request<{ result?: Record<string, unknown> }>(
+      '/api/v1/holdings',
+      {},
+      { account: true },
+    );
 
     let cashUsd: number | null = null;
     try {
+      await new Promise((r) => setTimeout(r, 1100));
       const bpUsd = await this.request<{ result?: Record<string, unknown> }>(
         '/api/v1/buying-power?currency=USD',
         {},
