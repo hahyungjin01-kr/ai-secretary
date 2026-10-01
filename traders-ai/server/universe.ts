@@ -1,4 +1,5 @@
-import { resolveTossConfig, TossBroker } from './broker/toss.js';
+import { getBroker } from './broker/index.js';
+import type { TossBroker } from './broker/toss.js';
 import type { TraderMode } from './modes.js';
 
 export type StrategyStyle = 'mean_reversion' | 'momentum' | 'break_follow' | 'trim';
@@ -28,10 +29,9 @@ const FALLBACK_KR_LIQUID = [
 
 const FALLBACK_US_LIQUID = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AMD'];
 
-async function tossClient(): Promise<TossBroker | null> {
-  const cfg = resolveTossConfig();
-  if (!cfg) return null;
-  return new TossBroker(cfg, false);
+function tossClient(): TossBroker | null {
+  const broker = getBroker(false);
+  return broker && broker.provider === 'toss' ? (broker as TossBroker) : null;
 }
 
 async function safeRankings(
@@ -66,7 +66,7 @@ export async function buildAutonomousUniverse(
   mode: TraderMode,
   heldSymbols: string[],
 ): Promise<{ candidates: CandidatePick[]; summary: string }> {
-  const client = await tossClient();
+  const client = tossClient();
   const picks = new Map<string, CandidatePick>();
 
   const add = (p: CandidatePick) => {

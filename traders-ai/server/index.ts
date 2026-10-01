@@ -4,13 +4,20 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODE_PROFILES, isTraderMode } from './modes.js';
-import { loadState, saveState, portfolioValue, type AppState } from './store.js';
+import fs from 'node:fs';
+import {
+  loadState,
+  saveState,
+  portfolioValue,
+  recoverStaleExecuting,
+  type AppState,
+} from './store.js';
 import { reconcilePendingAlerts, runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { sampleEgressIps } from './egress.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
-import { APPROVE_PHRASE } from './security.js';
+import { APPROVE_PHRASE, checkApproveConfirm } from './security.js';
 import {
   evaluateRisk,
   persistRiskFlags,
@@ -28,6 +35,7 @@ import {
   upsertSubscription,
   type PushSubscriptionJSON,
 } from './push.js';
+import { getApiSecret, injectSecretIntoHtml, requireApiSecret } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -35,11 +43,13 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
+const requireSecret = requireApiSecret();
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
+  recoverStaleExecuting(state);
   reconcilePendingAlerts(state);
   const broker = await fetchBrokerStatus(false);
   const equity = portfolioValue(state, marks);
@@ -119,6 +129,15 @@ async function markPrices(state: AppState): Promise<Record<string, number>> {
   return marks;
 }
 
+/** 클라이언트가 API 시크릿을 받음 (개인 터널용 — URL 비밀 유지 전제) */
+app.get('/api/bootstrap', (_req, res) => {
+  res.json({
+    apiSecret: getApiSecret(),
+    approvePhrase: APPROVE_PHRASE,
+    secretHeader: 'X-Traders-Secret',
+  });
+});
+
 app.get('/api/health', async (_req, res) => {
   const state = loadState();
   const broker = await fetchBrokerStatus(state.liveTradingArmed);
@@ -183,7 +202,7 @@ app.get('/api/broker/status', async (_req, res) => {
   }
 });
 
-app.post('/api/broker/sync', async (_req, res) => {
+app.post('/api/broker/sync', requireSecret, async (_req, res) => {
   try {
     const state = await syncFromBroker(loadState());
     const marks = await markPrices(state);
@@ -193,43 +212,28 @@ app.post('/api/broker/sync', async (_req, res) => {
   }
 });
 
-app.post('/api/broker/live', async (req, res) => {
+app.post('/api/broker/live', requireSecret, async (req, res) => {
   try {
     const state = loadState();
-    const arm = Boolean(req.body?.arm);
-    const confirm = String(req.body?.confirm ?? '')
-      .trim()
-      .toUpperCase();
-    const summary = brokerConfigSummary();
-
-    if (arm) {
-      if (!summary.configured) {
-        res.status(400).json({ error: '토스증권 API 키가 설정되지 않았습니다.' });
-        return;
-      }
-      if (confirm !== 'LIVE') {
-        res.status(400).json({
-          error: '실주문 활성화에는 confirm 값으로 LIVE 를 보내야 합니다.',
-        });
-        return;
-      }
-      state.liveTradingArmed = true;
-      state.liveArmedAt = new Date().toISOString();
-      state.preferBroker = true;
-    } else {
-      state.liveTradingArmed = false;
-      state.liveArmedAt = null;
+    // 영구 LIVE 무장 폐기: 실주문은 최종확인(confirm) 건별로만 나감
+    state.liveTradingArmed = false;
+    state.liveArmedAt = null;
+    if (req.body?.preferBroker !== undefined) {
+      state.preferBroker = Boolean(req.body.preferBroker);
     }
-
     saveState(state);
     const marks = await markPrices(state);
-    res.json(await publicState(state, marks));
+    res.json({
+      ...(await publicState(state, marks)),
+      notice:
+        '영구 LIVE 무장은 사용하지 않습니다. 최종 확인 시에만 건별 실주문이 나갑니다.',
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : '설정 실패' });
   }
 });
 
-app.patch('/api/settings', async (req, res) => {
+app.patch('/api/settings', requireSecret, async (req, res) => {
   try {
     const state = loadState();
     if (req.body?.mode !== undefined) {
@@ -280,7 +284,7 @@ app.patch('/api/settings', async (req, res) => {
   }
 });
 
-app.post('/api/daily/run', async (req, res) => {
+app.post('/api/daily/run', requireSecret, async (req, res) => {
   try {
     const force = Boolean(req.body?.force);
     try {
@@ -306,7 +310,7 @@ app.post('/api/daily/run', async (req, res) => {
 });
 
 /** 대기 중인 제안을 최종 확인 한 번에 순차 실행 */
-app.post('/api/risk/unlock-live', async (req, res) => {
+app.post('/api/risk/unlock-live', requireSecret, async (req, res) => {
   try {
     let state = loadState();
     state = unlockLiveTrading(state, String(req.body?.confirm ?? ''));
@@ -317,7 +321,7 @@ app.post('/api/risk/unlock-live', async (req, res) => {
   }
 });
 
-app.post('/api/risk/lock-live', async (_req, res) => {
+app.post('/api/risk/lock-live', requireSecret, async (_req, res) => {
   try {
     const state = lockLiveTrading(loadState());
     const marks = await markPrices(state);
@@ -327,9 +331,14 @@ app.post('/api/risk/lock-live', async (_req, res) => {
   }
 });
 
-app.post('/api/alerts/confirm-all', async (req, res) => {
+app.post('/api/alerts/confirm-all', requireSecret, async (req, res) => {
   try {
-    const confirm = String(req.body?.confirm ?? APPROVE_PHRASE);
+    const conf = checkApproveConfirm(req.body?.confirm);
+    if (!conf.ok) {
+      res.status(400).json({ error: conf.error });
+      return;
+    }
+    const confirm = String(req.body.confirm);
     const state0 = loadState();
     reconcilePendingAlerts(state0);
     saveState(state0);
@@ -405,7 +414,7 @@ app.post('/api/alerts/confirm-all', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/:id/act', async (req, res) => {
+app.post('/api/alerts/:id/act', requireSecret, async (req, res) => {
   try {
     const action = req.body?.action === 'skip' ? 'skip' : 'execute';
     const amount =
@@ -413,6 +422,13 @@ app.post('/api/alerts/:id/act', async (req, res) => {
         ? 0
         : Number(req.body.amount);
     const confirm = String(req.body?.confirm ?? '');
+    if (action === 'execute') {
+      const conf = checkApproveConfirm(confirm);
+      if (!conf.ok) {
+        res.status(400).json({ error: conf.error });
+        return;
+      }
+    }
     const result = await actOnAlert(req.params.id, amount, action, confirm);
     const marks = await markPrices(result.state);
     res.json({
@@ -446,7 +462,7 @@ app.get('/api/push/vapid-public-key', (_req, res) => {
   }
 });
 
-app.post('/api/push/subscribe', (req, res) => {
+app.post('/api/push/subscribe', requireSecret, (req, res) => {
   try {
     const sub = req.body?.subscription as PushSubscriptionJSON | undefined;
     if (!sub) {
@@ -460,7 +476,7 @@ app.post('/api/push/subscribe', (req, res) => {
   }
 });
 
-app.delete('/api/push/subscribe', (req, res) => {
+app.delete('/api/push/subscribe', requireSecret, (req, res) => {
   try {
     const endpoint = String(req.body?.endpoint ?? '');
     if (!endpoint) {
@@ -474,7 +490,7 @@ app.delete('/api/push/subscribe', (req, res) => {
   }
 });
 
-app.post('/api/push/test', async (_req, res) => {
+app.post('/api/push/test', requireSecret, async (_req, res) => {
   try {
     const pending = loadState().alerts.filter((a) => a.status === 'pending').length;
     const result = await sendPushToAll({
@@ -494,7 +510,7 @@ app.post('/api/push/test', async (_req, res) => {
   }
 });
 
-app.post('/api/push/remind-now', async (_req, res) => {
+app.post('/api/push/remind-now', requireSecret, async (_req, res) => {
   try {
     const result = await sendDailyConfirmReminder();
     res.json({ ok: true, ...result, notify: getNotifyInfo() });
@@ -504,23 +520,33 @@ app.post('/api/push/remind-now', async (_req, res) => {
 });
 
 const distDir = path.resolve(__dirname, '../dist');
-app.use(express.static(distDir));
+app.use(express.static(distDir, { index: false }));
 app.get(/^(?!\/api).*/, (_req, res) => {
-  res.sendFile(path.join(distDir, 'index.html'), (err) => {
-    if (err) res.status(404).json({ error: 'UI build missing. Run npm run build.' });
-  });
+  const indexPath = path.join(distDir, 'index.html');
+  try {
+    const html = injectSecretIntoHtml(fs.readFileSync(indexPath, 'utf8'));
+    res.type('html').send(html);
+  } catch {
+    res.status(404).json({ error: 'UI build missing. Run npm run build.' });
+  }
 });
 
 app.listen(PORT, HOST, () => {
   const setup = brokerConfigSummary();
-  // 건별 승인 모델: 부팅 시 영구 LIVE 무장 해제
+  try {
+    getApiSecret();
+  } catch (err) {
+    console.error('[boot] api secret', err);
+  }
+  // 건별 승인 모델: 부팅 시 영구 LIVE 무장 해제 + stale executing 복구
   try {
     const st = loadState();
     if (st.liveTradingArmed) {
       st.liveTradingArmed = false;
       st.liveArmedAt = null;
-      saveState(st);
     }
+    recoverStaleExecuting(st, 0); // 부팅 시 executing 전부 복구
+    saveState(st);
   } catch (err) {
     console.error('[boot] clear live arm', err);
   }

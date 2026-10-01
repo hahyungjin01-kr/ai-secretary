@@ -18,7 +18,7 @@ function round(n: number, d = 2): number {
 }
 
 /** 실제 쓸 수 있는 현금 (총자산 아님) */
-function spendableCash(state: AppState): number {
+export function spendableCash(state: AppState): number {
   const mode = MODE_PROFILES[state.mode];
   const marks = Object.fromEntries(state.positions.map((p) => [p.symbol, p.avgPrice]));
   const equity = portfolioValue(state, marks);

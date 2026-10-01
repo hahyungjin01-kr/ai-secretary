@@ -3,6 +3,7 @@ dist
 data/state.json
 data/vapid.json
 data/push-subscriptions.json
+data/api-secret.json
 .env
 .env.local
 *.log

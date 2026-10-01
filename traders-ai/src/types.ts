@@ -186,17 +186,90 @@ export interface Dashboard {
   trade?: TradeRecord;
 }
 
-// 예전 접속토큰 UI 잔여값 정리 (개인 사용, 게이트 삭제됨)
+declare global {
+  interface Window {
+    __TRADERS_API_SECRET__?: string;
+  }
+}
+
+const SECRET_KEY = 'traders_ai_api_secret';
+
+// 예전 접속토큰 UI 잔여값 정리
 try {
   localStorage.removeItem('traders_ai_token');
 } catch {
   // ignore
 }
 
-function apiHeaders(json = true): HeadersInit {
+let cachedSecret: string | null = null;
+let secretReady: Promise<string> | null = null;
+
+function readInjectedSecret(): string {
+  try {
+    if (typeof window !== 'undefined' && window.__TRADERS_API_SECRET__) {
+      return window.__TRADERS_API_SECRET__;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    return localStorage.getItem(SECRET_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export async function ensureApiSecret(): Promise<string> {
+  if (cachedSecret) return cachedSecret;
+  const injected = readInjectedSecret();
+  if (injected) {
+    cachedSecret = injected;
+    try {
+      localStorage.setItem(SECRET_KEY, injected);
+    } catch {
+      // ignore
+    }
+    void persistSecretToSw(injected);
+    return injected;
+  }
+  if (!secretReady) {
+    secretReady = (async () => {
+      const res = await fetch('/api/bootstrap', {
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+      const data = (await res.json()) as { apiSecret?: string };
+      const s = data.apiSecret ?? '';
+      if (!s) throw new Error('API 시크릿을 받지 못했습니다. 서버를 확인하세요.');
+      cachedSecret = s;
+      try {
+        localStorage.setItem(SECRET_KEY, s);
+      } catch {
+        // ignore
+      }
+      void persistSecretToSw(s);
+      return s;
+    })().finally(() => {
+      secretReady = null;
+    });
+  }
+  return secretReady;
+}
+
+async function persistSecretToSw(secret: string) {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.active?.postMessage({ type: 'traders-ai:set-secret', secret });
+  } catch {
+    // ignore
+  }
+}
+
+async function apiHeaders(json = true): Promise<HeadersInit> {
+  const secret = await ensureApiSecret();
   const h: Record<string, string> = {
-    // ngrok 무료 안내 HTML이 API 응답을 가로채지 않게 함
     'ngrok-skip-browser-warning': 'true',
+    'X-Traders-Secret': secret,
   };
   if (json) h['Content-Type'] = 'application/json';
   return h;
@@ -222,7 +295,8 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 export async function fetchDashboard(): Promise<Dashboard> {
-  return parse(await apiFetch('/api/dashboard', { headers: apiHeaders(false) }));
+  await ensureApiSecret();
+  return parse(await apiFetch('/api/dashboard', { headers: await apiHeaders(false) }));
 }
 
 export async function updateSettings(body: {
@@ -235,7 +309,7 @@ export async function updateSettings(body: {
   return parse(
     await apiFetch('/api/settings', {
       method: 'PATCH',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify(body),
     }),
   );
@@ -245,7 +319,7 @@ export async function runDaily(force = false): Promise<Dashboard> {
   return parse(
     await apiFetch('/api/daily/run', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify({ force }),
     }),
   );
@@ -259,11 +333,12 @@ export async function actOnAlert(
 ): Promise<Dashboard> {
   const body: { action: 'execute' | 'skip'; amount?: number; confirm?: string } = { action };
   if (amount !== undefined) body.amount = amount;
-  if (confirm !== undefined) body.confirm = confirm;
+  if (action === 'execute') body.confirm = confirm ?? '최종확인';
+  else if (confirm !== undefined) body.confirm = confirm;
   return parse(
     await apiFetch(`/api/alerts/${id}/act`, {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify(body),
     }),
   );
@@ -279,7 +354,7 @@ export async function confirmAllPending(): Promise<
   return parse(
     await apiFetch('/api/alerts/confirm-all', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify({ confirm: '최종확인' }),
     }),
   );
@@ -289,14 +364,14 @@ export async function syncBroker(): Promise<Dashboard> {
   return parse(
     await apiFetch('/api/broker/sync', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: '{}',
     }),
   );
 }
 
 export async function fetchEgressIps(): Promise<{ ips: string[]; hint: string }> {
-  return parse(await apiFetch('/api/broker/egress', { headers: apiHeaders(false) }));
+  return parse(await apiFetch('/api/broker/egress', { headers: await apiHeaders(false) }));
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -324,8 +399,11 @@ export async function enablePhoneNotify(): Promise<{ ok: true; endpoint: string 
   const reg = await navigator.serviceWorker.register('/sw.js');
   await navigator.serviceWorker.ready;
 
+  const secret = await ensureApiSecret();
+  reg.active?.postMessage({ type: 'traders-ai:set-secret', secret });
+
   const { publicKey } = await parse<{ publicKey: string }>(
-    await apiFetch('/api/push/vapid-public-key', { headers: apiHeaders(false) }),
+    await apiFetch('/api/push/vapid-public-key', { headers: await apiHeaders(false) }),
   );
 
   let sub = await reg.pushManager.getSubscription();
@@ -339,7 +417,7 @@ export async function enablePhoneNotify(): Promise<{ ok: true; endpoint: string 
   await parse(
     await apiFetch('/api/push/subscribe', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify({ subscription: sub.toJSON() }),
     }),
   );
@@ -351,7 +429,7 @@ export async function sendTestNotify(): Promise<{ sent: number; failed: number }
   return parse(
     await apiFetch('/api/push/test', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: '{}',
     }),
   );
@@ -377,7 +455,7 @@ export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashbo
   return parse(
     await apiFetch('/api/broker/live', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: await apiHeaders(),
       body: JSON.stringify({ arm, confirm }),
     }),
   );

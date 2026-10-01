@@ -144,10 +144,22 @@ function ensureDataDir() {
   }
 }
 
-export function loadState(): AppState {
+/** 단일 작가 큐 — 동시 load/save 경합 완화 */
+let writeChain: Promise<void> = Promise.resolve();
+
+export function withStateLock<T>(fn: () => T | Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function readStateUnsynced(): AppState {
   ensureDataDir();
   if (!fs.existsSync(STATE_PATH)) {
-    saveState(DEFAULT_STATE);
+    writeStateUnsynced(DEFAULT_STATE);
     return structuredClone(DEFAULT_STATE);
   }
   try {
@@ -178,13 +190,61 @@ export function loadState(): AppState {
   }
 }
 
-export function saveState(state: AppState): void {
+function writeStateUnsynced(state: AppState): void {
   ensureDataDir();
-  fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2), 'utf8');
+  const tmp = `${STATE_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
+  fs.renameSync(tmp, STATE_PATH);
 }
 
+export function loadState(): AppState {
+  return readStateUnsynced();
+}
+
+export function saveState(state: AppState): void {
+  writeStateUnsynced(state);
+}
+
+/** 비동기 단일 작가 경로 (스케줄/동시 요청용) */
+export async function updateState(
+  mutator: (state: AppState) => void | Promise<void>,
+): Promise<AppState> {
+  return withStateLock(async () => {
+    const state = readStateUnsynced();
+    await mutator(state);
+    writeStateUnsynced(state);
+    return state;
+  });
+}
+
+/** Asia/Seoul 기준 YYYY-MM-DD */
 export function todayKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** 멈춘 executing 알림 복구 (기본 15분, maxAgeMs<=0 이면 전부) */
+export function recoverStaleExecuting(
+  state: AppState,
+  maxAgeMs = 15 * 60_000,
+): number {
+  const now = Date.now();
+  let n = 0;
+  for (const a of state.alerts) {
+    if (a.status !== 'executing') continue;
+    const t = Date.parse(a.actedAt || a.createdAt || '');
+    const stale =
+      maxAgeMs <= 0 || !Number.isFinite(t) || now - t >= maxAgeMs;
+    if (!stale) continue;
+    a.status = 'pending';
+    a.executionNote = `실행 중 상태로 멈춤 → 재시도 가능하도록 복구 (${new Date().toISOString()})`;
+    n += 1;
+  }
+  return n;
 }
 
 export function uid(prefix: string): string {

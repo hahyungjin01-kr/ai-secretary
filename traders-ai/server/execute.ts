@@ -298,8 +298,15 @@ export async function actOnAlert(
       alert.suggestedAmount = round(alert.suggestedAmount * Math.max(0.35, hints.forceSizeFactor ?? 0.5));
       alert.confidence = Math.max(alert.confidence ?? 0, hints.relaxConfidenceFloor ?? 0.4);
       alert.moaSummary = `${alert.moaSummary ?? ''} · ${reviseLog[reviseLog.length - 1]}`;
+    } else if (revised.side !== alert.side) {
+      // 사용자 확인 후 사이드 변경 금지 — 사이즈만 조정
+      alert.suggestedAmount = round(
+        Math.min(alert.maxAmount, alert.suggestedAmount) *
+          Math.max(0.35, revised.sizeFactor * 0.8),
+      );
+      alert.moaSummary = `${alert.moaSummary ?? ''} · 재분석 사이드변경 무시(${revised.side})·사이즈만 조정`;
+      reviseLog.push(`재분석#${round + 1}: 사이드 변경 거부 (확인=${alert.side})`);
     } else {
-      alert.side = revised.side;
       alert.score = revised.score;
       alert.entry = revised.entry;
       alert.target = revised.target;

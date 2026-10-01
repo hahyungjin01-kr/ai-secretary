@@ -14,7 +14,7 @@ export interface DevilInput {
 
 export interface DevilResult {
   challenges: DevilChallenge[];
-  /** 0–1, 높을수록 제안이 위험/의약 */
+  /** 0–1, 높을수록 제안이 위험/취약 */
   riskPenalty: number;
   /** true면 매수/매도를 관망으로 강등 권고 */
   veto: boolean;
@@ -22,7 +22,9 @@ export interface DevilResult {
 }
 
 /**
- * 악마의 변호인: 분석 결론을 항상 반박·스트레스 테스트.
+ * 악마의 변호인: 조건부 반박.
+ * 상시 high 챌린지(public-info/human-gate)는 info/medium 으로 내려
+ * "항상 비토 → 완화 통과" 패턴을 제거한다.
  */
 export function runDevilAdvocate(
   research: ResearchBundle,
@@ -30,20 +32,30 @@ export function runDevilAdvocate(
 ): DevilResult {
   const challenges: DevilChallenge[] = [];
 
+  // 교육용 상시 챌린지 — veto 카운트에 넣지 않도록 medium/info
   challenges.push({
     id: 'public-info',
     claim: '시세·뉴스·지표를 잘 모으면 초과수익이 난다',
     counter:
       '공개 정보는 이미 가격에 반영됐을 수 있다. 이 분석은 보조일 뿐 알파를 보장하지 않는다.',
-    severity: 'high',
+    severity: 'medium',
+  });
+
+  challenges.push({
+    id: 'human-gate',
+    claim: 'AI가 합의했으니 바로 주문해도 된다',
+    counter: '최종 매수는 사용자 허락 후에만. 모델 합의도 틀렸을 수 있다.',
+    severity: 'medium',
   });
 
   if (draft.side === 'buy') {
+    const knifeSeverity =
+      research.changePercent != null && research.changePercent <= -4 ? 'high' : 'medium';
     challenges.push({
       id: 'catching-knife',
       claim: '과매도/하락이면 반등한다',
       counter: '추가 하락·가치함정·실적 쇼크가 가능. 손절이 깨지면 가설을 즉시 폐기하라.',
-      severity: 'high',
+      severity: knifeSeverity,
     });
   }
 
@@ -61,7 +73,7 @@ export function runDevilAdvocate(
       id: 'weak-consensus',
       claim: '전문가 혼합 점수가 있으니 진입해도 된다',
       counter: `MoE 합의 ${(draft.agreement * 100).toFixed(0)}%로 낮다. 의견 분열 시에는 관망이 기본값이다.`,
-      severity: 'high',
+      severity: draft.agreement < 0.4 ? 'high' : 'medium',
     });
   }
 
@@ -70,7 +82,7 @@ export function runDevilAdvocate(
       id: 'poor-rr',
       claim: '손절만 있으면 된다',
       counter: `손익비 ${draft.rewardRisk}는 얇다. 체결 슬리피지·갭을 감안하면 기대값이 더 나빠질 수 있다.`,
-      severity: 'high',
+      severity: draft.rewardRisk < 1.15 ? 'high' : 'medium',
     });
   }
 
@@ -104,7 +116,7 @@ export function runDevilAdvocate(
       id: 'data-quality',
       claim: '데이터가 있으니 신뢰할 수 있다',
       counter: `데이터 경고: ${research.dataWarnings.slice(0, 2).join(' / ')}. 입력 품질이 낮으면 결론도 약하다.`,
-      severity: 'high',
+      severity: research.dataWarnings.length >= 2 ? 'high' : 'medium',
     });
   }
 
@@ -117,28 +129,21 @@ export function runDevilAdvocate(
     });
   }
 
-  challenges.push({
-    id: 'human-gate',
-    claim: 'AI가 합의했으니 바로 주문해도 된다',
-    counter: '최종 매수는 사용자 허락 후에만. 모델 합의도 틀렸을 수 있다.',
-    severity: 'high',
-  });
-
   const high = challenges.filter((c) => c.severity === 'high').length;
   const medium = challenges.filter((c) => c.severity === 'medium').length;
-  let riskPenalty = Math.min(0.55, high * 0.1 + medium * 0.05);
+  let riskPenalty = Math.min(0.55, high * 0.12 + medium * 0.04);
 
   if (draft.agreement < 0.45) riskPenalty += 0.12;
   if (draft.score < 50) riskPenalty += 0.08;
 
-  // 강한 비토: 고위험 다수·합의 약함·데이터 불량·손익비 부실
+  // 조건부 비토만 — 상시 챌린지만으로는 veto 되지 않음
   const veto =
     draft.side !== 'hold' &&
-    (high >= 3 ||
-      (draft.agreement < 0.5 && high >= 2) ||
+    (high >= 2 ||
+      (draft.agreement < 0.45 && high >= 1) ||
       (research.dataWarnings.length >= 2 && draft.side === 'buy' && draft.agreement < 0.6) ||
-      (draft.rewardRisk > 0 && draft.rewardRisk < 1.2) ||
-      (draft.score < 48 && draft.side === 'buy'));
+      (draft.rewardRisk > 0 && draft.rewardRisk < 1.15) ||
+      (draft.score < 45 && draft.side === 'buy'));
 
   const summary = veto
     ? `악마의 변호인: 진입 거부 (고위험 ${high}건 · 합의 ${(draft.agreement * 100).toFixed(0)}%).`

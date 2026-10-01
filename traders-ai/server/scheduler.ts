@@ -217,10 +217,7 @@ async function tick() {
 
 export function startDailyScheduler() {
   if (timer) return;
-  if (!scheduleEnabled() && !notifyEnabled()) {
-    console.log('[scheduler] disabled');
-    return;
-  }
+  // flush(예약 주문)는 analysis/notify 와 무관하게 항상 기동
   console.log(
     `[scheduler] analysis ${scheduleEnabled() ? scheduleTimeKst() : 'off'} · notify ${
       notifyEnabled() ? notifyTimeKst() : 'off'
