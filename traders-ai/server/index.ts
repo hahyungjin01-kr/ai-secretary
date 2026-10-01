@@ -94,7 +94,7 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer:
-      '수익을 보장하지 않습니다. 페이퍼 검증·일손실 킬스위치·최종 확인 후에만 주문이 나갑니다. 손익은 사용자 책임입니다.',
+      '수익을 보장하지 않습니다. 일손실 킬스위치·최종 확인 후에만 주문이 나갑니다. 손익은 사용자 책임입니다.',
   };
 }
 

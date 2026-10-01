@@ -96,7 +96,7 @@ export interface AppState {
   liveTradingArmed: boolean;
   liveArmedAt: string | null;
   preferBroker: boolean;
-  /** 페이퍼 검증 후 사용자가 UNLOCK 한 경우에만 실주문 */
+  /** 호환 필드 (페이퍼 검증 제거됨 — 기본 true) */
   liveTradingUnlocked: boolean;
   liveUnlockedAt: string | null;
   paperStartedAt: string | null;
@@ -123,7 +123,7 @@ const DEFAULT_STATE: AppState = {
   liveTradingArmed: false,
   liveArmedAt: null,
   preferBroker: true,
-  liveTradingUnlocked: false,
+  liveTradingUnlocked: true,
   liveUnlockedAt: null,
   paperStartedAt: null,
   paperTradeDates: [],
@@ -159,7 +159,7 @@ export function loadState(): AppState {
       lastUniverseSummary: raw.lastUniverseSummary ?? null,
       lastUniverseSymbols: raw.lastUniverseSymbols ?? [],
       lastUniverseAt: raw.lastUniverseAt ?? null,
-      liveTradingUnlocked: Boolean(raw.liveTradingUnlocked),
+      liveTradingUnlocked: raw.liveTradingUnlocked !== false,
       liveUnlockedAt: raw.liveUnlockedAt ?? null,
       paperStartedAt: raw.paperStartedAt ?? null,
       paperTradeDates: Array.isArray(raw.paperTradeDates) ? raw.paperTradeDates : [],

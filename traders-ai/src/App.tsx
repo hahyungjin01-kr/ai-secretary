@@ -4,11 +4,9 @@ import {
   confirmAllPending,
   fetchDashboard,
   getAccessToken,
-  lockLiveTrading,
   runDaily,
   setAccessToken,
   syncBroker,
-  unlockLiveTrading,
   updateSettings,
   type DailyAlert,
   type Dashboard,
@@ -271,18 +269,16 @@ export default function App() {
         </div>
         <p
           className={`badge ${
-            dash.risk?.killSwitchActive ? 'live' : dash.risk?.paperOnly ? '' : connected ? 'ok' : ''
+            dash.risk?.killSwitchActive ? 'live' : connected ? 'ok' : ''
           }`}
         >
           {dash.risk?.killSwitchActive
             ? '일손실 잠금'
-            : dash.risk?.paperOnly
-              ? '페이퍼 검증중'
-              : connected
-                ? '실주문 가능'
-                : dash.broker.configured
-                  ? '토스 연결 실패'
-                  : '모의투자'}
+            : connected
+              ? '실주문 가능'
+              : dash.broker.configured
+                ? '토스 연결 실패'
+                : '모의투자'}
         </p>
       </header>
 
@@ -292,7 +288,7 @@ export default function App() {
             <h1>알아서 투자합니다</h1>
             <p>
               AI가 종목을 고르면 <strong>최종 확인</strong> 한 번으로 실행합니다. 수익은 보장되지
-              않으며, 페이퍼 검증·일손실 한도·연속손실 잠금이 적용됩니다.
+              않으며, 일손실 한도·연속손실 잠금이 적용됩니다.
             </p>
           </div>
 
@@ -399,12 +395,6 @@ export default function App() {
                 <dd>-{dash.risk.dailyLossLimitPct}%</dd>
               </div>
               <div>
-                <dt>페이퍼 거래일</dt>
-                <dd>
-                  {dash.risk.paperTradeDays}/{dash.risk.paperTradeDaysRequired}
-                </dd>
-              </div>
-              <div>
                 <dt>연속 손실</dt>
                 <dd>
                   {dash.risk.consecutiveLosses}/{dash.risk.maxConsecutiveLosses}
@@ -412,49 +402,6 @@ export default function App() {
               </div>
             </dl>
             {dash.risk.lockReason && <p className="hint">잠금: {dash.risk.lockReason}</p>}
-            <div className="hero-actions">
-              {dash.risk.canUnlockLive && !dash.risk.liveUnlocked && (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={brokerBusy}
-                  onClick={async () => {
-                    setBrokerBusy(true);
-                    setError(null);
-                    try {
-                      setDash(await unlockLiveTrading());
-                      setNotice('실주문이 해금되었습니다. 그래도 수익은 보장되지 않습니다.');
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : '해금 실패');
-                    } finally {
-                      setBrokerBusy(false);
-                    }
-                  }}
-                >
-                  실주문 해금 (UNLOCK)
-                </button>
-              )}
-              {dash.risk.liveUnlocked && (
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={brokerBusy}
-                  onClick={async () => {
-                    setBrokerBusy(true);
-                    try {
-                      setDash(await lockLiveTrading());
-                      setNotice('실주문을 다시 잠갔습니다. 페이퍼만 동작합니다.');
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : '잠금 실패');
-                    } finally {
-                      setBrokerBusy(false);
-                    }
-                  }}
-                >
-                  실주문 다시 잠그기
-                </button>
-              )}
-            </div>
           </section>
         )}
 

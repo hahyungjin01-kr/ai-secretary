@@ -309,12 +309,10 @@ export async function actOnAlert(
   alert.executionNote = `사전거래 MoA 통과 · 주문 중… (${gate.summary})`;
   saveState(state);
 
-  // 페이퍼 검증 기간에는 토스 키가 있어도 로컬 모의만
   const risk = evaluateRisk(state, { [alert.symbol]: research.price });
   persistRiskFlags(state, risk);
-  const wantsLive = Boolean(
-    state.preferBroker && getBroker(false) && !risk.paperOnly && state.liveTradingUnlocked,
-  );
+  // FORCE_PAPER=1 이 아니면 토스 연동 시 실주문
+  const wantsLive = Boolean(state.preferBroker && getBroker(false) && !risk.paperOnly);
   // 건별 일회성 live 클라이언트 — state.liveTradingArmed 는 건드리지 않음
   const broker = wantsLive ? getBroker(true) : null;
   let venue: TradeRecord['venue'] = 'local-paper';
@@ -355,7 +353,7 @@ export async function actOnAlert(
         shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
       }
       note = risk.paperOnly
-        ? `최종확인 · 페이퍼(검증기간) ${shares}주 · ${risk.message}`
+        ? `최종확인 · FORCE_PAPER 모의 ${shares}주 · ${risk.message}`
         : `최종확인 · 로컬 모의 ${shares}주 · ${gate.summary}`;
     }
   } catch (err) {

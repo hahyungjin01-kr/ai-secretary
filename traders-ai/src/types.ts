@@ -133,10 +133,6 @@ export interface Dashboard {
   risk?: {
     paperOnly: boolean;
     liveUnlocked: boolean;
-    paperTradeDays: number;
-    paperTradeDaysRequired: number;
-    paperCalendarDays: number;
-    paperCalendarDaysRequired: number;
     canUnlockLive: boolean;
     killSwitchActive: boolean;
     killSwitchReason: string | null;
@@ -309,22 +305,3 @@ export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashbo
   );
 }
 
-export async function unlockLiveTrading(): Promise<Dashboard> {
-  return parse(
-    await apiFetch('/api/risk/unlock-live', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ confirm: 'UNLOCK' }),
-    }),
-  );
-}
-
-export async function lockLiveTrading(): Promise<Dashboard> {
-  return parse(
-    await apiFetch('/api/risk/lock-live', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: '{}',
-    }),
-  );
-}

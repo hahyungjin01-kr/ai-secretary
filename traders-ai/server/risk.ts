@@ -7,33 +7,17 @@ import {
   type TradeRecord,
 } from './store.js';
 
-/** 기본: 고유 페이퍼 거래일 10일 + 캘린더 14일 경과 후 실주문 해금 가능 */
-export function requiredPaperDays(): number {
-  const n = Number(process.env.MIN_PAPER_TRADE_DAYS || 10);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 10;
-}
-
-export function requiredPaperCalendarDays(): number {
-  const n = Number(process.env.MIN_PAPER_CALENDAR_DAYS || 14);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 14;
-}
-
 export function dailyLossLimitPct(state: AppState): number {
   const env = Number(process.env.DAILY_LOSS_LIMIT_PCT);
   if (Number.isFinite(env) && env > 0) return env;
-  // 모드 1회 리스크의 ~2배, 상한 5%
   const mode = MODE_PROFILES[state.mode];
   return Math.min(5, Math.max(1, mode.riskPercent * 2));
 }
 
 export interface RiskStatus {
+  /** FORCE_PAPER=1 일 때만 true (페이퍼 검증 기간은 없음) */
   paperOnly: boolean;
   liveUnlocked: boolean;
-  paperTradeDays: number;
-  paperTradeDaysRequired: number;
-  paperCalendarDays: number;
-  paperCalendarDaysRequired: number;
-  paperStartedAt: string | null;
   canUnlockLive: boolean;
   killSwitchActive: boolean;
   killSwitchReason: string | null;
@@ -48,18 +32,6 @@ export interface RiskStatus {
   message: string;
 }
 
-function uniqueSortedDates(dates: string[]): string[] {
-  return [...new Set(dates.filter(Boolean))].sort();
-}
-
-function calendarDaysSince(isoDate: string | null): number {
-  if (!isoDate) return 0;
-  const start = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`).getTime();
-  const now = Date.now();
-  if (!Number.isFinite(start)) return 0;
-  return Math.max(0, Math.floor((now - start) / 86_400_000));
-}
-
 /** 최근 체결 중 손실 매도 연속 횟수 (직전 매수 평단 대비) */
 export function countConsecutiveLossTrades(trades: TradeRecord[]): number {
   let n = 0;
@@ -68,9 +40,6 @@ export function countConsecutiveLossTrades(trades: TradeRecord[]): number {
       if (t.side === 'buy') break;
       continue;
     }
-    // 매도만으로는 손익 부호를 확정하기 어려워, 같은 날 연속 매도 실패 프록시로
-    // brokerStatus rejected 등을 쓰지 않는 한 — 금액 대비 작은 체결을 손실로 보지 않음
-    // 대신: 직전 매수 평단을 trades 히스토리에서 추정
     const priorBuy = trades.find(
       (x) => x.symbol === t.symbol && x.side === 'buy' && x.at < t.at,
     );
@@ -91,7 +60,6 @@ export function ensureDayBaseline(state: AppState, marks: Record<string, number>
   });
   if (!state.dayBaseline || state.dayBaseline.date !== today) {
     state.dayBaseline = { date: today, equity };
-    // 날짜가 바뀌면 킬스위치는 사유가 일손실인 경우만 해제
     if (state.killSwitchActive && state.killSwitchReason?.includes('일 손실')) {
       state.killSwitchActive = false;
       state.killSwitchReason = null;
@@ -102,21 +70,10 @@ export function ensureDayBaseline(state: AppState, marks: Record<string, number>
 
 export function evaluateRisk(state: AppState, marks: Record<string, number> = {}): RiskStatus {
   ensureDayBaseline(state, marks);
-  const paperDates = uniqueSortedDates(state.paperTradeDates ?? []);
-  const paperTradeDays = paperDates.length;
-  const paperTradeDaysRequired = requiredPaperDays();
-  const paperStartedAt = state.paperStartedAt;
-  const paperCalendarDays = calendarDaysSince(paperStartedAt);
-  const paperCalendarDaysRequired = requiredPaperCalendarDays();
-  const liveUnlocked = Boolean(state.liveTradingUnlocked);
   const forcePaperEnv = String(process.env.FORCE_PAPER || '').toLowerCase() === '1';
-
-  const canUnlockLive =
-    !forcePaperEnv &&
-    paperTradeDays >= paperTradeDaysRequired &&
-    paperCalendarDays >= paperCalendarDaysRequired;
-
-  const paperOnly = forcePaperEnv || !liveUnlocked;
+  const paperOnly = forcePaperEnv;
+  // 페이퍼 검증 제거: 기본 실주문 허용 (토스 키·최종확인·킬스위치만)
+  const liveUnlocked = !forcePaperEnv;
 
   const limitPct = dailyLossLimitPct(state);
   const baseline = state.dayBaseline?.equity ?? null;
@@ -152,21 +109,17 @@ export function evaluateRisk(state: AppState, marks: Record<string, number> = {}
   }
 
   const message = paperOnly
-    ? `페이퍼 모드: 거래일 ${paperTradeDays}/${paperTradeDaysRequired}, 경과일 ${paperCalendarDays}/${paperCalendarDaysRequired}` +
-      (canUnlockLive ? ' · 실주문 해금 가능' : ' · 실주문 잠김(검증 기간)')
+    ? 'FORCE_PAPER=1 · 모의만 가능'
     : killSwitchActive
       ? `실주문 가능 · ${killSwitchReason}`
-      : `실주문 가능 · 일손실 한도 ${limitPct}%`;
+      : buysLocked
+        ? `실주문 가능 · ${lockReason}`
+        : `실주문 가능 · 일손실 한도 ${limitPct}%`;
 
   return {
     paperOnly,
     liveUnlocked,
-    paperTradeDays,
-    paperTradeDaysRequired,
-    paperCalendarDays,
-    paperCalendarDaysRequired,
-    paperStartedAt,
-    canUnlockLive,
+    canUnlockLive: false,
     killSwitchActive,
     killSwitchReason,
     dailyLossLimitPct: limitPct,
@@ -181,33 +134,29 @@ export function evaluateRisk(state: AppState, marks: Record<string, number> = {}
   };
 }
 
-/** 상태 파일에 킬스위치/페이퍼 필드를 동기화 */
 export function persistRiskFlags(state: AppState, risk: RiskStatus): AppState {
   state.killSwitchActive = risk.killSwitchActive;
   state.killSwitchReason = risk.killSwitchReason;
-  if (!state.paperStartedAt && (state.paperTradeDates?.length ?? 0) > 0) {
-    state.paperStartedAt = state.paperTradeDates[0] ?? todayKey();
+  // 페이퍼 검증 제거에 맞춰 실주문 해금 플래그도 항상 열어 둠
+  if (
+    !state.liveTradingUnlocked &&
+    String(process.env.FORCE_PAPER || '').toLowerCase() !== '1'
+  ) {
+    state.liveTradingUnlocked = true;
+    state.liveUnlockedAt = state.liveUnlockedAt ?? new Date().toISOString();
   }
   return state;
 }
 
 export function recordPaperTradeDay(state: AppState, atIso: string): void {
+  // 호환용 no-op에 가깝게 유지 (통계만 쌓음)
   const day = atIso.slice(0, 10);
-  const dates = uniqueSortedDates([...(state.paperTradeDates ?? []), day]);
+  const dates = [...new Set([...(state.paperTradeDates ?? []), day])].sort();
   state.paperTradeDates = dates;
   if (!state.paperStartedAt) state.paperStartedAt = day;
 }
 
-export function unlockLiveTrading(state: AppState, confirm: string): AppState {
-  const risk = evaluateRisk(state);
-  if (!risk.canUnlockLive) {
-    throw new Error(
-      `페이퍼 검증 미달: 거래일 ${risk.paperTradeDays}/${risk.paperTradeDaysRequired}, 경과일 ${risk.paperCalendarDays}/${risk.paperCalendarDaysRequired}`,
-    );
-  }
-  if (confirm.trim().toUpperCase() !== 'UNLOCK') {
-    throw new Error('실주문 해금에는 confirm 값으로 UNLOCK 이 필요합니다.');
-  }
+export function unlockLiveTrading(state: AppState, _confirm: string): AppState {
   state.liveTradingUnlocked = true;
   state.liveUnlockedAt = new Date().toISOString();
   saveState(state);
@@ -215,6 +164,7 @@ export function unlockLiveTrading(state: AppState, confirm: string): AppState {
 }
 
 export function lockLiveTrading(state: AppState): AppState {
+  // 페이퍼 검증 UI용 API는 유지하되, 강제 모의는 FORCE_PAPER로만
   state.liveTradingUnlocked = false;
   state.liveUnlockedAt = null;
   saveState(state);
