@@ -166,6 +166,13 @@ export interface Dashboard {
   trade?: TradeRecord;
 }
 
+// 예전 접속토큰 UI 잔여값 정리 (개인 사용, 게이트 삭제됨)
+try {
+  localStorage.removeItem('traders_ai_token');
+} catch {
+  // ignore
+}
+
 function apiHeaders(json = true): HeadersInit {
   const h: Record<string, string> = {
     // ngrok 무료 안내 HTML이 API 응답을 가로채지 않게 함
