@@ -48,17 +48,28 @@ npm run dev
 - Web: http://localhost:5173
 - API: http://localhost:8787
 
-### 모바일(데이터)에서 접속
-
-도메인 없이 공개 URL로 열 때:
+### 모바일(데이터)에서 접속 — 고정 주소
 
 ```bash
-npm run start:public
-# 다른 터미널
-npx localtunnel --port 8787
+./scripts/start-mobile.sh
 ```
 
-나온 `https://....loca.lt` 주소를 폰 브라우저에 입력하면 됩니다.
+기본 고정 URL:
+
+```
+https://traders-ai-toss.loca.lt
+```
+
+서브도메인은 `.env`의 `PUBLIC_TUNNEL_SUBDOMAIN`으로 바꿀 수 있습니다.
+
+더 안정적으로 고정하려면 [ngrok](https://dashboard.ngrok.com) 무료 가입 후:
+
+```env
+NGROK_AUTHTOKEN=...
+NGROK_DOMAIN=xxxx.ngrok-free.app
+```
+
+다시 `./scripts/start-mobile.sh` 실행하면 됩니다.
 
 ## API
 

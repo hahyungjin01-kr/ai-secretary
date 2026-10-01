@@ -1,6 +1,7 @@
 node_modules
 dist
-data
+data/state.json
+!data/public-url.txt
 .env
 .env.local
 *.log
