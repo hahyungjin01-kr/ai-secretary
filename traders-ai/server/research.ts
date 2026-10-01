@@ -1,0 +1,169 @@
+import YahooFinance from 'yahoo-finance2';
+import { RSI, BollingerBands } from 'technicalindicators';
+import type { Candle, NewsItem, ResearchBundle } from './types.js';
+
+const yahooFinance = new YahooFinance({
+  suppressNotices: ['yahooSurvey', 'ripHistorical'],
+});
+
+function round(n: number, d = 2): number {
+  const p = 10 ** d;
+  return Math.round(n * p) / p;
+}
+
+export async function resolveSymbol(query: string): Promise<string> {
+  const q = query.trim();
+  if (!q) throw new Error('종목 심볼 또는 이름을 입력하세요.');
+
+  if (/^[A-Za-z]{1,5}(\.[A-Za-z]{1,3})?$/.test(q)) {
+    return q.toUpperCase();
+  }
+
+  const search = await yahooFinance.search(q);
+  const match =
+    search?.quotes?.find(
+      (x: { quoteType?: string; symbol?: string }) =>
+        x.symbol && (x.quoteType === 'EQUITY' || x.quoteType === 'ETF'),
+    ) ?? search?.quotes?.[0];
+
+  if (!match?.symbol) {
+    throw new Error(`종목을 찾지 못했습니다: ${q}`);
+  }
+  return String(match.symbol);
+}
+
+export async function collectResearch(inputSymbol: string): Promise<ResearchBundle> {
+  const symbol = await resolveSymbol(inputSymbol);
+  const warnings: string[] = [];
+
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 120);
+
+  const [quote, historical, summary, search] = await Promise.all([
+    yahooFinance.quote(symbol).catch(() => null),
+    yahooFinance
+      .historical(symbol, { period1: start, period2: end, interval: '1d' })
+      .catch(() => [] as Awaited<ReturnType<typeof yahooFinance.historical>>),
+    yahooFinance
+      .quoteSummary(symbol, {
+        modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'],
+      })
+      .catch(() => null),
+    yahooFinance.search(symbol).catch(() => null),
+  ]);
+
+  if (!quote || quote.regularMarketPrice == null) {
+    throw new Error(`시세를 가져오지 못했습니다: ${symbol}`);
+  }
+
+  const candles: Candle[] = (historical ?? [])
+    .filter((h) => h.close != null)
+    .map((h) => ({
+      date: new Date(h.date).toISOString().slice(0, 10),
+      open: Number(h.open),
+      high: Number(h.high),
+      low: Number(h.low),
+      close: Number(h.close),
+      volume: Number(h.volume ?? 0),
+    }));
+
+  const closes = candles.map((c) => c.close);
+  let rsi14: number | null = null;
+  let bollinger: ResearchBundle['bollinger'] = null;
+
+  if (closes.length >= 20) {
+    const rsi = RSI.calculate({ values: closes, period: 14 });
+    rsi14 = rsi.length ? round(rsi[rsi.length - 1]) : null;
+    const bb = BollingerBands.calculate({
+      values: closes,
+      period: 20,
+      stdDev: 2,
+    });
+    if (bb.length) {
+      const last = bb[bb.length - 1];
+      bollinger = {
+        upper: round(last.upper),
+        middle: round(last.middle),
+        lower: round(last.lower),
+      };
+    }
+  } else {
+    warnings.push('가격 히스토리가 짧아 RSI/볼린저 신뢰도가 낮습니다.');
+  }
+
+  const sd = summary?.summaryDetail ?? {};
+  const ks = summary?.defaultKeyStatistics ?? {};
+  const fd = summary?.financialData ?? {};
+
+  const volume = quote.regularMarketVolume ?? null;
+  const avgVolume =
+    (sd as { averageVolume?: number }).averageVolume ??
+    quote.averageDailyVolume3Month ??
+    null;
+  const volumeRatio =
+    volume != null && avgVolume != null && avgVolume > 0
+      ? round(volume / avgVolume, 2)
+      : null;
+
+  const news: NewsItem[] = ((search as { news?: Array<Record<string, unknown>> })?.news ?? [])
+    .slice(0, 5)
+    .map((n) => ({
+      title: String(n.title ?? ''),
+      publisher: n.publisher ? String(n.publisher) : undefined,
+      link: n.link ? String(n.link) : undefined,
+      publishedAt: n.providerPublishTime
+        ? new Date(Number(n.providerPublishTime) * 1000).toISOString()
+        : undefined,
+    }))
+    .filter((n) => n.title);
+
+  if (news.length === 0) {
+    warnings.push('최신 뉴스 헤드라인을 확보하지 못했습니다.');
+  }
+  if (!summary) {
+    warnings.push('재무 요약 모듈 조회에 실패했습니다. 밸류에이션은 제한됩니다.');
+  }
+
+  return {
+    symbol,
+    name: String(quote.longName || quote.shortName || symbol),
+    currency: String(quote.currency || 'USD'),
+    asOf: new Date().toISOString(),
+    price: round(Number(quote.regularMarketPrice)),
+    changePercent:
+      quote.regularMarketChangePercent != null
+        ? round(Number(quote.regularMarketChangePercent), 2)
+        : null,
+    volume,
+    avgVolume,
+    volumeRatio,
+    fiftyTwoWeekHigh:
+      quote.fiftyTwoWeekHigh != null ? round(Number(quote.fiftyTwoWeekHigh)) : null,
+    fiftyTwoWeekLow:
+      quote.fiftyTwoWeekLow != null ? round(Number(quote.fiftyTwoWeekLow)) : null,
+    marketCap:
+      (sd as { marketCap?: number }).marketCap != null
+        ? Number((sd as { marketCap?: number }).marketCap)
+        : quote.marketCap != null
+          ? Number(quote.marketCap)
+          : null,
+    trailingPE:
+      (sd as { trailingPE?: number }).trailingPE != null
+        ? round(Number((sd as { trailingPE?: number }).trailingPE), 2)
+        : null,
+    priceToBook:
+      (ks as { priceToBook?: number }).priceToBook != null
+        ? round(Number((ks as { priceToBook?: number }).priceToBook), 2)
+        : null,
+    returnOnEquity:
+      (fd as { returnOnEquity?: number }).returnOnEquity != null
+        ? round(Number((fd as { returnOnEquity?: number }).returnOnEquity) * 100, 2)
+        : null,
+    rsi14,
+    bollinger,
+    candles: candles.slice(-60),
+    news,
+    dataWarnings: warnings,
+  };
+}
