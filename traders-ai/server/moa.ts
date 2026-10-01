@@ -1,6 +1,6 @@
 import type { ResearchBundle, DevilChallenge } from './types.js';
 import type { ModeProfile } from './modes.js';
-import { runMixtureOfExperts, type ExpertVote, type ExpertSide, type MoEResult } from './moe.js';
+import { runMixtureOfExperts, type ExpertSide, type MoEResult } from './moe.js';
 import { runDevilAdvocate, type DevilResult } from './devilAdvocate.js';
 
 export interface AgentOpinion {
@@ -72,36 +72,89 @@ function levels(
   return { entry, target: entry, stop: entry, rewardRisk: 0 };
 }
 
-/** Proposer agent: MoE를 특정 전문가 가중으로 재해석 */
-function proposerFromVotes(
+/** 독립 제안 에이전트: 각자 다른 피처만 보고 판단 (상관 투표 완화) */
+function independentProposer(
   agentId: string,
   agentName: string,
-  moe: MoEResult,
-  preferExpertIds: string[],
+  research: ResearchBundle,
+  lens: 'technical' | 'fundamental' | 'flow',
 ): AgentOpinion {
-  const preferred = moe.votes.filter((v) => preferExpertIds.includes(v.expertId));
-  const pool = preferred.length > 0 ? preferred : moe.votes;
-  const buy = pool.filter((v) => v.side === 'buy');
-  const sell = pool.filter((v) => v.side === 'sell');
-  const hold = pool.filter((v) => v.side === 'hold');
+  let buy = 45;
+  let sell = 40;
+  const notes: string[] = [];
 
-  const scoreOf = (arr: ExpertVote[]) =>
-    arr.length === 0
-      ? 0
-      : arr.reduce((s, v) => s + v.score * v.weight, 0) / arr.reduce((s, v) => s + v.weight, 0);
+  if (lens === 'technical') {
+    const rsi = research.rsi14;
+    const bb = research.bollinger;
+    if (rsi != null) {
+      if (rsi <= 32) {
+        buy += 22;
+        notes.push(`RSI ${rsi}`);
+      } else if (rsi >= 72) {
+        sell += 22;
+        notes.push(`RSI ${rsi}`);
+      }
+    }
+    if (bb) {
+      if (research.price <= bb.lower) {
+        buy += 14;
+        notes.push('BB하단');
+      } else if (research.price >= bb.upper) {
+        sell += 14;
+        notes.push('BB상단');
+      }
+    }
+  } else if (lens === 'fundamental') {
+    if (research.trailingPE != null) {
+      if (research.trailingPE > 0 && research.trailingPE < 14) {
+        buy += 16;
+        notes.push(`PER ${research.trailingPE}`);
+      } else if (research.trailingPE > 40) {
+        buy -= 14;
+        sell += 8;
+        notes.push(`고PER ${research.trailingPE}`);
+      }
+    }
+    if (research.returnOnEquity != null && research.returnOnEquity >= 12) {
+      buy += 8;
+      notes.push(`ROE ${research.returnOnEquity}`);
+    }
+    if (research.news.length === 0) {
+      buy -= 10;
+      notes.push('뉴스공백');
+    }
+  } else {
+    const chg = research.changePercent;
+    const vol = research.volumeRatio;
+    if (chg != null && chg <= -3) {
+      buy += 10;
+      notes.push(`${chg}%`);
+    }
+    if (chg != null && chg >= 3.5) {
+      sell += 12;
+      notes.push(`${chg}%급등`);
+    }
+    if (vol != null && vol >= 1.7) {
+      buy += 8;
+      sell += 6;
+      notes.push(`vol ${vol}x`);
+    }
+    if (vol != null && vol < 0.5) {
+      buy -= 12;
+      notes.push('유동성↓');
+    }
+  }
 
-  const buyS = scoreOf(buy);
-  const sellS = scoreOf(sell);
-  const holdS = scoreOf(hold) || 45;
-
+  buy = Math.max(0, Math.min(100, buy));
+  sell = Math.max(0, Math.min(100, sell));
   let side: ExpertSide = 'hold';
-  let score = holdS;
-  if (buyS >= sellS && buyS >= holdS && buyS >= 52) {
+  let score = Math.max(buy, sell) * 0.85;
+  if (buy >= 58 && buy > sell + 4) {
     side = 'buy';
-    score = buyS;
-  } else if (sellS > buyS && sellS >= holdS && sellS >= 52) {
+    score = buy;
+  } else if (sell >= 58 && sell > buy + 4) {
     side = 'sell';
-    score = sellS;
+    score = sell;
   }
 
   return {
@@ -110,8 +163,15 @@ function proposerFromVotes(
     role: 'proposer',
     side,
     score: round(score, 1),
-    note: `${agentName} 제안: ${side} (${score.toFixed(0)})`,
+    note: `${agentName}: ${side} (${notes.slice(0, 3).join(', ') || '중립'})`,
   };
+}
+
+/** MoE 보조 투표 (독립 제안과 충돌 시 감점용) */
+function moeSupportSide(moe: MoEResult, side: ExpertSide): number {
+  if (side === 'buy') return moe.buyScore;
+  if (side === 'sell') return moe.sellScore;
+  return moe.holdScore;
 }
 
 function riskAgent(
@@ -173,17 +233,16 @@ export function runMixtureOfAgents(
   mode: ModeProfile,
   heldShares: number,
 ): MoADecision {
-  // Layer-0: shared MoE feature votes
+  // Layer-0: MoE 전문가 앙상블
   const moe = runMixtureOfExperts(research, mode, heldShares);
 
-  // Layer-1 proposers (MoA)
+  // Layer-1: 독립 렌즈 제안 에이전트 3인 (피처 분리)
   const proposers: AgentOpinion[] = [
-    proposerFromVotes('tech-proposer', '기술 제안', moe, ['technical', 'momentum']),
-    proposerFromVotes('fund-proposer', '펀더 제안', moe, ['valuation', 'news']),
-    proposerFromVotes('tape-proposer', '수급 제안', moe, ['momentum', 'risk', 'news']),
+    independentProposer('tech-proposer', '기술 제안', research, 'technical'),
+    independentProposer('fund-proposer', '펀더 제안', research, 'fundamental'),
+    independentProposer('tape-proposer', '수급 제안', research, 'flow'),
   ];
 
-  // Soft vote among proposers
   let buyW = 0;
   let sellW = 0;
   let holdW = 0;
@@ -193,21 +252,30 @@ export function runMixtureOfAgents(
     else holdW += p.score;
   }
 
-  // Blend with MoE consensus
-  buyW += moe.buyScore * (1 + moe.agreement);
-  sellW += moe.sellScore * (1 + moe.agreement);
-  holdW += moe.holdScore;
+  // MoE는 보조 가중 (제안자 과반이 우선)
+  buyW += moe.buyScore * 0.65 * (0.5 + moe.agreement);
+  sellW += moe.sellScore * 0.65 * (0.5 + moe.agreement);
+  holdW += moe.holdScore * 0.8;
 
   let draftSide: ExpertSide = 'hold';
   let draftScore = moe.holdScore;
   if (buyW >= sellW && buyW >= holdW) {
     draftSide = 'buy';
     const n = Math.max(1, proposers.filter((p) => p.side === 'buy').length);
-    draftScore = (moe.buyScore * 0.55 + buyW / (n + 1) * 0.45);
+    draftScore = proposers.filter((p) => p.side === 'buy').reduce((s, p) => s + p.score, 0) / n;
+    draftScore = draftScore * 0.6 + moeSupportSide(moe, 'buy') * 0.4;
   } else if (sellW > buyW && sellW >= holdW) {
     draftSide = 'sell';
     const n = Math.max(1, proposers.filter((p) => p.side === 'sell').length);
-    draftScore = (moe.sellScore * 0.55 + sellW / (n + 1) * 0.45);
+    draftScore = proposers.filter((p) => p.side === 'sell').reduce((s, p) => s + p.score, 0) / n;
+    draftScore = draftScore * 0.6 + moeSupportSide(moe, 'sell') * 0.4;
+  }
+
+  // 제안자 과반이 아니면 관망으로 강등 (가짜 합의 방지)
+  const majority = proposers.filter((p) => p.side === draftSide).length >= 2;
+  if (draftSide !== 'hold' && !majority) {
+    draftSide = 'hold';
+    draftScore = Math.max(moe.holdScore, 45);
   }
 
   // 보유 없으면 sell 금지

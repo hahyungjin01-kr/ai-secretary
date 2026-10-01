@@ -41,7 +41,7 @@ export interface DailyAlert {
   maxAmount: number;
   currency: string;
   mode: TraderMode;
-  status: 'pending' | 'executed' | 'skipped' | 'expired';
+  status: 'pending' | 'executing' | 'executed' | 'skipped' | 'expired';
   strategy?: string;
   howToInvest?: string;
   horizon?: string;
@@ -132,6 +132,8 @@ export interface Dashboard {
   paperTrading: boolean;
   broker: BrokerStatus;
   disclaimer: string;
+  accessTokenRequired?: boolean;
+  approvePhrase?: string;
   createdCount?: number;
   scanned?: number;
   universeSummary?: string;
@@ -139,6 +141,33 @@ export interface Dashboard {
   created?: DailyAlert[];
   alert?: DailyAlert;
   trade?: TradeRecord;
+}
+
+const TOKEN_KEY = 'traders_ai_token';
+
+export function getAccessToken(): string {
+  try {
+    return localStorage.getItem(TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAccessToken(token: string) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function authHeaders(json = true): HeadersInit {
+  const h: Record<string, string> = {};
+  if (json) h['Content-Type'] = 'application/json';
+  const t = getAccessToken();
+  if (t) h['X-Traders-Token'] = t;
+  return h;
 }
 
 async function parse<T>(res: Response): Promise<T> {
@@ -161,7 +190,7 @@ export async function updateSettings(body: {
   return parse(
     await fetch('/api/settings', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(body),
     }),
   );
@@ -171,7 +200,7 @@ export async function runDaily(force = false): Promise<Dashboard> {
   return parse(
     await fetch('/api/daily/run', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ force }),
     }),
   );
@@ -181,13 +210,15 @@ export async function actOnAlert(
   id: string,
   amount?: number,
   action: 'execute' | 'skip' = 'execute',
+  confirm?: string,
 ): Promise<Dashboard> {
-  const body: { action: 'execute' | 'skip'; amount?: number } = { action };
+  const body: { action: 'execute' | 'skip'; amount?: number; confirm?: string } = { action };
   if (amount !== undefined) body.amount = amount;
+  if (confirm !== undefined) body.confirm = confirm;
   return parse(
     await fetch(`/api/alerts/${id}/act`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(body),
     }),
   );
@@ -197,7 +228,7 @@ export async function syncBroker(): Promise<Dashboard> {
   return parse(
     await fetch('/api/broker/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: '{}',
     }),
   );
@@ -207,7 +238,7 @@ export async function setLiveTrading(arm: boolean, confirm = ''): Promise<Dashbo
   return parse(
     await fetch('/api/broker/live', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ arm, confirm }),
     }),
   );

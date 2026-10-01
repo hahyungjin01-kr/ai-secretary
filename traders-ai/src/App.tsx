@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   actOnAlert,
   fetchDashboard,
+  getAccessToken,
   runDaily,
+  setAccessToken,
   syncBroker,
   updateSettings,
   type DailyAlert,
@@ -31,17 +33,25 @@ function ApprovalCard({
 }: {
   alert: DailyAlert;
   busyId: string | null;
-  onApprove: (alert: DailyAlert) => void;
+  onApprove: (alert: DailyAlert, confirm: string) => void;
   onDeny: (alert: DailyAlert) => void;
 }) {
-  const busy = busyId === alert.id;
+  const [confirm, setConfirm] = useState('');
+  const busy = busyId === alert.id || alert.status === 'executing';
   const isBuy = alert.side === 'buy';
+  const canApprove = confirm.trim() === '허락' && alert.status === 'pending';
 
   return (
     <article className={`alert-card ${alert.side}`}>
       <header>
         <div>
-          <p className="alert-kicker">{isBuy ? '매수 허락 요청' : '매도 허락 요청'}</p>
+          <p className="alert-kicker">
+            {alert.status === 'executing'
+              ? '주문 처리 중'
+              : isBuy
+                ? '매수 허락 요청'
+                : '매도 허락 요청'}
+          </p>
           <h3>
             {alert.name} <span>{alert.symbol}</span>
           </h3>
@@ -103,16 +113,38 @@ function ApprovalCard({
         </div>
       )}
 
+      {alert.status === 'pending' && (
+        <label className="confirm-box">
+          실주문하려면 아래에 <strong>허락</strong> 입력
+          <input
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="허락"
+            autoComplete="off"
+            disabled={busy}
+          />
+        </label>
+      )}
+
       <footer>
         <button
           type="button"
           className="primary"
-          disabled={busy}
-          onClick={() => onApprove(alert)}
+          disabled={busy || !canApprove}
+          onClick={() => onApprove(alert, confirm.trim())}
         >
-          {busy ? '처리 중…' : isBuy ? '허락하고 매수' : '허락하고 매도'}
+          {busy
+            ? '처리 중…'
+            : isBuy
+              ? '사전검증 후 매수'
+              : '사전검증 후 매도'}
         </button>
-        <button type="button" className="ghost" disabled={busy} onClick={() => onDeny(alert)}>
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy || alert.status !== 'pending'}
+          onClick={() => onDeny(alert)}
+        >
           거절
         </button>
       </footer>
@@ -128,6 +160,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [brokerBusy, setBrokerBusy] = useState(false);
+  const [tokenInput, setTokenInput] = useState(() => getAccessToken());
 
   const refresh = useCallback(async () => {
     const data = await fetchDashboard();
@@ -180,15 +213,20 @@ export default function App() {
     }
   }
 
-  async function onApprove(alert: DailyAlert) {
+  async function onApprove(alert: DailyAlert, confirm: string) {
     setBusyId(alert.id);
     setError(null);
     try {
-      const data = await actOnAlert(alert.id, undefined, 'execute');
+      const data = await actOnAlert(alert.id, undefined, 'execute', confirm);
       setDash(data);
       setNotice(data.alert?.executionNote ?? '체결 완료');
     } catch (e) {
       setError(e instanceof Error ? e.message : '체결 실패');
+      try {
+        setDash(await fetchDashboard());
+      } catch {
+        // ignore
+      }
     } finally {
       setBusyId(null);
     }
@@ -261,8 +299,8 @@ export default function App() {
           <div className="hero-copy">
             <h1>알아서 투자합니다</h1>
             <p>
-              MoE(전문가 혼합) → MoA(에이전트 혼합) → 악마의 변호인 점검 후, 통과한 종목만
-              제안합니다. 매수 직전에 「허락」만 하세요.
+              MoE→MoA→악마의 변호인으로 고른 뒤, 주문 직전 사전거래 MoA(장운영·가격괴리·자금·재검증)를
+              한 번 더 통과해야 합니다. 「허락」을 입력한 건만 주문됩니다.
             </p>
           </div>
 
@@ -306,6 +344,31 @@ export default function App() {
             </select>
           </label>
         </section>
+
+        {dash.accessTokenRequired && (
+          <section className="panel">
+            <h2>접속 토큰</h2>
+            <p className="hint">공개 URL 보호용. .env의 TRADERS_AI_TOKEN 과 같아야 합니다.</p>
+            <div className="hero-actions">
+              <input
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="TRADERS_AI_TOKEN"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setAccessToken(tokenInput.trim());
+                  setNotice('토큰을 저장했습니다.');
+                }}
+              >
+                토큰 저장
+              </button>
+            </div>
+          </section>
+        )}
 
         {!dash.broker.configured && (
           <section className="panel">

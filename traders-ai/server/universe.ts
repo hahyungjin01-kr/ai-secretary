@@ -133,35 +133,37 @@ export async function buildAutonomousUniverse(
         });
       }
     } else {
-      // profit
-      const gainersKr = await safeRankings(client, 'TOP_GAINERS', 'KR', '1d', 25);
-      const gainersUs = await safeRankings(client, 'TOP_GAINERS', 'US', '1d', 15);
-      const tossKr = await safeRankings(client, 'TOSS_SECURITIES_TRADING_VOLUME', 'KR', 'realtime', 20);
-      for (const r of gainersKr.slice(0, 18)) {
+      // profit — 유동성 우선, 극단 급등 추격 비중 축소 (악마의 변호인 지적 반영)
+      const liquid = await safeRankings(client, 'MARKET_TRADING_AMOUNT', 'KR', '1d', 30);
+      const gainersKr = await safeRankings(client, 'TOP_GAINERS', 'KR', '1d', 20);
+      const tossKr = await safeRankings(client, 'TOSS_SECURITIES_TRADING_VOLUME', 'KR', 'realtime', 15);
+      for (const r of liquid.slice(0, 12)) {
         add({
           symbol: r.symbol,
-          source: 'KR 급등',
-          style: 'momentum',
-          whySelected: `급등 랭킹 ${r.rank}위 — 수익형 모멘텀`,
-          priority: 90 - r.rank,
+          source: 'KR 거래대금',
+          style: 'flow_follow',
+          whySelected: `유동성 ${r.rank}위 — 수익형도 체결 가능한 종목 우선`,
+          priority: 70 - r.rank,
         });
       }
-      for (const r of gainersUs.slice(0, 10)) {
+      for (const r of gainersKr.slice(0, 10)) {
+        const chg = (r.changeRate ?? 0) * 100;
+        if (chg > 12) continue; // 과열 추격 배제
         add({
           symbol: r.symbol,
-          source: 'US 급등',
+          source: 'KR 상승',
           style: 'momentum',
-          whySelected: `미국 급등 ${r.rank}위 — 수익형 모멘텀`,
-          priority: 75 - r.rank,
+          whySelected: `상승 ${chg.toFixed(1)}% (12% 이하) — 수익형 모멘텀`,
+          priority: 80 - r.rank,
         });
       }
-      for (const r of tossKr.slice(0, 12)) {
+      for (const r of tossKr.slice(0, 8)) {
         add({
           symbol: r.symbol,
           source: '토스 거래량',
           style: 'flow_follow',
-          whySelected: `토스 실시간 거래량 ${r.rank}위 — 단기 탄력`,
-          priority: 85 - r.rank,
+          whySelected: `토스 거래량 ${r.rank}위 — 단기 수급`,
+          priority: 75 - r.rank,
         });
       }
     }

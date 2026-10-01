@@ -131,14 +131,17 @@ export function runDevilAdvocate(
   if (draft.agreement < 0.45) riskPenalty += 0.12;
   if (draft.score < 50) riskPenalty += 0.08;
 
+  // 강한 비토: 고위험 다수·합의 약함·데이터 불량·손익비 부실
   const veto =
     draft.side !== 'hold' &&
-    ((draft.agreement < 0.4 && high >= 3) ||
-      (research.dataWarnings.length >= 3 && draft.side === 'buy') ||
-      (draft.rewardRisk > 0 && draft.rewardRisk < 1.0));
+    (high >= 3 ||
+      (draft.agreement < 0.5 && high >= 2) ||
+      (research.dataWarnings.length >= 2 && draft.side === 'buy' && draft.agreement < 0.6) ||
+      (draft.rewardRisk > 0 && draft.rewardRisk < 1.2) ||
+      (draft.score < 48 && draft.side === 'buy'));
 
   const summary = veto
-    ? `악마의 변호인: 진입 거부 권고 (고위험 ${high}건).`
+    ? `악마의 변호인: 진입 거부 (고위험 ${high}건 · 합의 ${(draft.agreement * 100).toFixed(0)}%).`
     : `악마의 변호인: 점검 ${challenges.length}건 · 페널티 ${(riskPenalty * 100).toFixed(0)}%p.`;
 
   return {

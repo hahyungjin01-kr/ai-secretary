@@ -1,5 +1,5 @@
-import 'dotenv/config';
-import express from 'express';
+import dotenv from 'dotenv';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,14 +9,27 @@ import { runDailyAnalysis } from './daily.js';
 import { actOnAlert, ExecuteError, syncFromBroker } from './execute.js';
 import { collectResearch } from './research.js';
 import { brokerConfigSummary, fetchBrokerStatus } from './broker/index.js';
+import { accessTokenConfigured, checkAccessToken } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+/** 변경 API 보호 (TRADERS_AI_TOKEN 설정 시) */
+function requireAccessToken(req: Request, res: Response, next: NextFunction) {
+  const check = checkAccessToken(req.header('x-traders-token'));
+  if (!check.ok) {
+    res.status(401).json({ error: check.error });
+    return;
+  }
+  next();
+}
 
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
   const broker = await fetchBrokerStatus(state.liveTradingArmed);
@@ -54,7 +67,9 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
         : 0,
     positions: positionMarks,
     alerts: state.alerts,
-    pendingAlerts: state.alerts.filter((a) => a.status === 'pending'),
+    pendingAlerts: state.alerts.filter((a) => a.status === 'pending' || a.status === 'executing'),
+    accessTokenRequired: accessTokenConfigured(),
+    approvePhrase: '허락',
     trades: state.trades,
     lastDailyRunAt: state.lastDailyRunAt,
     lastDailyRunDate: state.lastDailyRunDate,
@@ -68,8 +83,8 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
     broker,
     brokerSetup: brokerConfigSummary(),
     disclaimer: usingBroker
-      ? '토스증권 계좌 현금으로 AI가 종목을 고릅니다. 매수/매도는 「허락」을 누를 때만 실행됩니다.'
-      : '로컬 모의투자입니다. .env에 토스 Open API 키를 넣으면 실계좌로 연동됩니다.',
+      ? '토스 연동: 사전거래 MoA(장운영·괴리·자금·악마의변호인) 통과 후, confirm「허락」일 때만 건별 주문합니다. 수익 보장 없음.'
+      : '로컬 모의투자입니다. .env에 토스 키를 넣으면 실계좌 연동. 주문 전 사전거래 MoA 게이트가 적용됩니다.',
   };
 }
 
@@ -137,7 +152,7 @@ app.get('/api/broker/status', async (_req, res) => {
   }
 });
 
-app.post('/api/broker/sync', async (_req, res) => {
+app.post('/api/broker/sync', requireAccessToken, async (_req, res) => {
   try {
     const state = await syncFromBroker(loadState());
     const marks = await markPrices(state);
@@ -147,7 +162,7 @@ app.post('/api/broker/sync', async (_req, res) => {
   }
 });
 
-app.post('/api/broker/live', async (req, res) => {
+app.post('/api/broker/live', requireAccessToken, async (req, res) => {
   try {
     const state = loadState();
     const arm = Boolean(req.body?.arm);
@@ -183,7 +198,7 @@ app.post('/api/broker/live', async (req, res) => {
   }
 });
 
-app.patch('/api/settings', async (req, res) => {
+app.patch('/api/settings', requireAccessToken, async (req, res) => {
   try {
     const state = loadState();
     if (req.body?.mode !== undefined) {
@@ -234,7 +249,7 @@ app.patch('/api/settings', async (req, res) => {
   }
 });
 
-app.post('/api/daily/run', async (req, res) => {
+app.post('/api/daily/run', requireAccessToken, async (req, res) => {
   try {
     const force = Boolean(req.body?.force);
     try {
@@ -259,15 +274,15 @@ app.post('/api/daily/run', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/:id/act', async (req, res) => {
+app.post('/api/alerts/:id/act', requireAccessToken, async (req, res) => {
   try {
     const action = req.body?.action === 'skip' ? 'skip' : 'execute';
-    // amount 생략 시 AI 추천 금액 사용
     const amount =
       req.body?.amount === undefined || req.body?.amount === null || req.body?.amount === ''
         ? 0
         : Number(req.body.amount);
-    const result = await actOnAlert(req.params.id, amount, action);
+    const confirm = String(req.body?.confirm ?? '');
+    const result = await actOnAlert(req.params.id, amount, action, confirm);
     const marks = await markPrices(result.state);
     res.json({
       ...(await publicState(result.state, marks)),
@@ -302,10 +317,26 @@ app.get(/^(?!\/api).*/, (_req, res) => {
 
 app.listen(PORT, HOST, () => {
   const setup = brokerConfigSummary();
+  // 건별 승인 모델: 부팅 시 영구 LIVE 무장 해제
+  try {
+    const st = loadState();
+    if (st.liveTradingArmed) {
+      st.liveTradingArmed = false;
+      st.liveArmedAt = null;
+      saveState(st);
+    }
+  } catch (err) {
+    console.error('[boot] clear live arm', err);
+  }
   console.log(`Traders AI listening on http://${HOST}:${PORT}`);
   console.log(
     setup.configured
       ? `Broker: Toss Securities @ ${setup.baseUrl}`
       : 'Broker: not configured (local paper). Set TOSS_CLIENT_ID/TOSS_CLIENT_SECRET in .env',
+  );
+  console.log(
+    accessTokenConfigured()
+      ? 'API guard: TRADERS_AI_TOKEN required on mutating routes'
+      : 'API guard: TRADERS_AI_TOKEN not set (open mutating routes — set token for public URL)',
   );
 });

@@ -33,7 +33,7 @@ export interface TradeRecord {
 }
 
 export type AlertSide = 'buy' | 'sell';
-export type AlertStatus = 'pending' | 'executed' | 'skipped' | 'expired';
+export type AlertStatus = 'pending' | 'executing' | 'executed' | 'skipped' | 'expired';
 
 export interface DailyAlert {
   id: string;

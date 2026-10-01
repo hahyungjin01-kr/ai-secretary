@@ -1,6 +1,8 @@
 import { collectResearch } from './research.js';
 import { MODE_PROFILES } from './modes.js';
-import { getBroker, BrokerError } from './broker/index.js';
+import { getBroker, BrokerError, fetchBrokerStatus } from './broker/index.js';
+import { runPretradeMoA } from './pretrade.js';
+import { checkApproveConfirm } from './security.js';
 import {
   loadState,
   saveState,
@@ -23,7 +25,12 @@ export class ExecuteError extends Error {
   }
 }
 
-function clampAmount(alert: DailyAlert, amount: number, state: AppState): number {
+function clampAmount(
+  alert: DailyAlert,
+  amount: number,
+  state: AppState,
+  sizeFactor: number,
+): number {
   const mode = MODE_PROFILES[state.mode];
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new ExecuteError('투자/매도 금액은 0보다 커야 합니다.');
@@ -35,18 +42,21 @@ function clampAmount(alert: DailyAlert, amount: number, state: AppState): number
     const maxByMode = (equity * mode.maxPositionPct) / 100;
     const minCashReserve = (equity * mode.minCashPct) / 100;
     const spendable = Math.max(0, state.cash - minCashReserve);
-    const capped = Math.min(amount, alert.maxAmount, maxByMode, spendable);
-    if (capped < alert.entry) {
+    const capped = round(
+      Math.min(amount, alert.maxAmount, maxByMode, spendable) * sizeFactor,
+    );
+    const minPx = alert.researchSummary?.price || alert.entry;
+    if (minPx > 0 && capped < minPx) {
       throw new ExecuteError(
         `모드(${mode.label}) 한도/현금 부족으로 매수할 수 없습니다. 최대 약 ${round(capped)}`,
       );
     }
-    return round(capped);
+    return capped;
   }
 
   const held = state.positions.find((p) => p.symbol === alert.symbol);
   const maxSell = (held?.shares ?? 0) * alert.entry;
-  const capped = Math.min(amount, alert.maxAmount, maxSell);
+  const capped = Math.min(amount, alert.maxAmount, maxSell) * sizeFactor;
   if (capped <= 0) throw new ExecuteError('매도할 보유 수량이 없습니다.');
   return round(capped);
 }
@@ -97,20 +107,18 @@ function applyLocalSell(state: AppState, symbol: string, shares: number, price: 
   return qty;
 }
 
-/** 브로커 잔고/포지션을 로컬 상태에 반영 */
+/** 브로커 잔고/포지션을 로컬 상태에 반영 (읽기 전용 — LIVE 무장 불필요) */
 export async function syncFromBroker(state: AppState = loadState()): Promise<AppState> {
   if (!state.preferBroker) return state;
-  const broker = getBroker(state.liveTradingArmed);
+  const broker = getBroker(false);
   if (!broker) return state;
 
   const account = await broker.getAccount();
-  // ASSET rate limit — wait before holdings refetch in getPositions
   await new Promise((r) => setTimeout(r, 1200));
   const positions = await broker.getPositions();
 
   state.cash = round(account.cash);
   state.currency = account.currency || state.currency;
-  // 토스 실잔고 기준으로 시작자본도 맞춰 손익 표시가 어긋나지 않게 함
   if (!state.startingCash || state.currency !== account.currency) {
     state.startingCash = round(account.equity);
   }
@@ -130,17 +138,22 @@ export async function syncFromBroker(state: AppState = loadState()): Promise<App
 }
 
 /**
- * 사용자가 「허락」하면 AI 추천 금액으로 체결합니다.
- * 토스 연동 중이면 허락 = 그 건 실주문 승인입니다.
+ * 사용자 confirm="허락" + 사전거래 MoA 통과 시에만 체결.
+ * LIVE를 영구 무장하지 않고, 해당 주문에만 일회성으로 브로커 live 클라이언트를 사용.
  */
 export async function actOnAlert(
   alertId: string,
   amount: number,
   action: 'execute' | 'skip' = 'execute',
+  confirm = '',
 ): Promise<{ state: AppState; alert: DailyAlert; trade?: TradeRecord }> {
   let state = loadState();
   const alert = state.alerts.find((a) => a.id === alertId);
   if (!alert) throw new ExecuteError('알림을 찾을 수 없습니다.');
+
+  if (alert.status === 'executing') {
+    throw new ExecuteError('이미 주문 처리 중입니다. 체결/거부 결과를 확인한 뒤 다시 시도하세요.');
+  }
   if (alert.status !== 'pending') throw new ExecuteError('이미 처리된 알림입니다.');
 
   if (action === 'skip') {
@@ -151,11 +164,13 @@ export async function actOnAlert(
     return { state, alert };
   }
 
-  // refresh local cash/positions from broker before sizing
+  const conf = checkApproveConfirm(confirm);
+  if (!conf.ok) throw new ExecuteError(conf.error);
+
   try {
     state = await syncFromBroker(state);
   } catch (err) {
-    if (state.preferBroker && getBroker(true)) {
+    if (state.preferBroker && getBroker(false)) {
       throw new ExecuteError(
         `브로커 동기화 실패: ${err instanceof Error ? err.message : 'unknown'}`,
       );
@@ -163,7 +178,8 @@ export async function actOnAlert(
   }
 
   const research = await collectResearch(alert.symbol);
-  alert.entry = research.price;
+  // 괴리 검사용으로 제안 시점 entry는 유지하고, 현재가만 요약에 반영
+  const proposedEntry = alert.entry;
   alert.researchSummary = {
     price: research.price,
     changePercent: research.changePercent,
@@ -172,9 +188,30 @@ export async function actOnAlert(
     newsTitles: research.news.slice(0, 3).map((n) => n.title),
   };
 
-  // 금액 미입력/0이면 AI 추천 금액 사용
+  let buyingPower: number | null = null;
+  try {
+    const status = await fetchBrokerStatus(false);
+    buyingPower = status.account?.buyingPower ?? null;
+  } catch {
+    buyingPower = state.cash;
+  }
+
+  const gate = runPretradeMoA({
+    alert: { ...alert, entry: proposedEntry },
+    research,
+    mode: MODE_PROFILES[state.mode],
+    cash: state.cash,
+    buyingPower,
+  });
+
+  if (!gate.allow) {
+    alert.executionNote = gate.summary;
+    saveState(state);
+    throw new ExecuteError(gate.summary);
+  }
+
   const requested = Number.isFinite(amount) && amount > 0 ? amount : alert.suggestedAmount;
-  const fillAmount = clampAmount(alert, requested, state);
+  const fillAmount = clampAmount(alert, requested, state, gate.sizeFactor);
   const price = research.price;
   let shares = 0;
 
@@ -185,25 +222,27 @@ export async function actOnAlert(
     const existing = state.positions.find((p) => p.symbol === alert.symbol);
     if (!existing) throw new ExecuteError('매도할 보유 수량이 없습니다.');
     shares = Math.min(existing.shares, Math.floor(fillAmount / price));
-    if (shares <= 0 || fillAmount >= alert.maxAmount * 0.95) shares = existing.shares;
+    if (shares <= 0 || fillAmount >= alert.maxAmount * 0.95 * gate.sizeFactor) {
+      shares = existing.shares;
+    }
   }
 
-  // 허락 = 실주문 승인 (별도 LIVE 아밍 불필요)
-  const brokerReady = Boolean(state.preferBroker && getBroker(true));
-  if (brokerReady) {
-    state.liveTradingArmed = true;
-    state.liveArmedAt = state.liveArmedAt ?? new Date().toISOString();
-  }
+  // 멱등: executing 마킹 후 주문 (실패 시 pending 복구, 성공 불명 시 executing 유지)
+  alert.status = 'executing';
+  alert.executionNote = `사전거래 MoA 통과 · 주문 중… (${gate.summary})`;
+  saveState(state);
 
-  const broker = brokerReady ? getBroker(true) : null;
+  const wantsLive = Boolean(state.preferBroker && getBroker(false));
+  // 건별 일회성 live 클라이언트 — state.liveTradingArmed 는 건드리지 않음
+  const broker = wantsLive ? getBroker(true) : null;
   let venue: TradeRecord['venue'] = 'local-paper';
   let brokerOrderId: string | undefined;
   let brokerStatus: string | undefined;
   let fillPrice = price;
   let note = '';
 
-  if (broker) {
-    try {
+  try {
+    if (broker) {
       const order = await broker.placeOrder({
         symbol: alert.symbol,
         side: alert.side,
@@ -220,41 +259,62 @@ export async function actOnAlert(
       }
       if (order.filledQty > 0) shares = order.filledQty;
 
-      state = await syncFromBroker(state);
-      note = `허락 승인 · 토스증권 ${alert.side === 'buy' ? '매수' : '매도'} ${shares}주 (${order.status})`;
-    } catch (err) {
-      const msg = err instanceof BrokerError || err instanceof Error ? err.message : '주문 실패';
-      throw new ExecuteError(`토스 주문 실패: ${msg}`);
-    }
-  } else {
-    if (alert.side === 'buy') {
-      applyLocalBuy(state, alert.symbol, research.name, research.currency, shares, fillPrice);
+      try {
+        state = await syncFromBroker(state);
+      } catch (syncErr) {
+        // 주문은 나갔으므로 executed로 확정하고 동기화 경고만 남김
+        console.error('[execute] post-order sync', syncErr);
+      }
+      note = `건별 허락 · 토스 ${alert.side === 'buy' ? '매수' : '매도'} ${shares}주 (${order.status}) · ${gate.summary}`;
     } else {
-      shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
+      if (alert.side === 'buy') {
+        applyLocalBuy(state, alert.symbol, research.name, research.currency, shares, fillPrice);
+      } else {
+        shares = applyLocalSell(state, alert.symbol, shares, fillPrice);
+      }
+      note = `건별 허락 · 로컬 모의 ${shares}주 · ${gate.summary}`;
     }
-    note = `허락 승인 · 로컬 모의 ${shares}주 ${alert.side === 'buy' ? '매수' : '매도'}`;
+  } catch (err) {
+    // 주문 API 실패 — 재시도 가능하도록 pending 복구
+    const fresh = loadState();
+    const a = fresh.alerts.find((x) => x.id === alertId);
+    if (a && a.status === 'executing') {
+      a.status = 'pending';
+      a.executionNote = `주문 실패로 복구: ${err instanceof Error ? err.message : 'unknown'}`;
+      saveState(fresh);
+    }
+    const msg = err instanceof BrokerError || err instanceof Error ? err.message : '주문 실패';
+    throw new ExecuteError(`주문 실패: ${msg}`);
   }
+
+  // reload alert ref after possible sync save
+  state = loadState();
+  const done = state.alerts.find((a) => a.id === alertId);
+  if (!done) throw new ExecuteError('알림 상태를 잃었습니다.');
 
   const trade: TradeRecord = {
     id: uid('trade'),
-    alertId: alert.id,
-    symbol: alert.symbol,
-    side: alert.side,
+    alertId: done.id,
+    symbol: done.symbol,
+    side: done.side,
     amount: round(shares * fillPrice),
     shares,
     price: fillPrice,
     mode: state.mode,
-    reason: alert.thesis,
+    reason: done.thesis,
     at: new Date().toISOString(),
     venue,
     brokerOrderId,
     brokerStatus,
   };
 
-  alert.status = 'executed';
-  alert.actedAt = trade.at;
-  alert.executionNote = note;
+  done.status = 'executed';
+  done.actedAt = trade.at;
+  done.executionNote = note;
+  done.entry = fillPrice;
   state.trades = [trade, ...state.trades].slice(0, 300);
+  // LIVE 영구 무장 금지
+  state.liveTradingArmed = false;
   saveState(state);
-  return { state, alert, trade };
+  return { state, alert: done, trade };
 }
