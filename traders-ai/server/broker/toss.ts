@@ -9,10 +9,40 @@ import type {
 } from './types.js';
 
 const BASE_URL = 'https://openapi.tossinvest.com';
+/** Per-request timeout — Cloud/ngrok egress + IP retries must not hang the UI */
+const FETCH_TIMEOUT_MS = Number(process.env.TOSS_FETCH_TIMEOUT_MS || 8_000);
+const TOKEN_MAX_ATTEMPTS = Number(process.env.TOSS_TOKEN_MAX_ATTEMPTS || 3);
+const REQUEST_MAX_ATTEMPTS = Number(process.env.TOSS_REQUEST_MAX_ATTEMPTS || 3);
 
 function num(v: unknown, fallback = 0): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const outer = init.signal;
+  const onAbort = () => ctrl.abort();
+  if (outer) {
+    if (outer.aborted) ctrl.abort();
+    else outer.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new BrokerError(`토스 API 응답 시간 초과 (${timeoutMs}ms)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (outer) outer.removeEventListener('abort', onAbort);
+  }
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -143,10 +173,10 @@ export class TossBroker implements BrokerClient {
       client_secret: this.clientSecret,
     });
 
-    // 이 환경은 출구 IP가 여러 개라 허용 IP 외 경로로 나가면 403이 날 수 있음 → 재시도
+    // 이 환경은 출구 IP가 여러 개라 허용 IP 외 경로로 나가면 403이 날 수 있음 → 짧은 재시도
     let lastErr = '토스 토큰 발급 실패';
-    for (let attempt = 1; attempt <= 6; attempt++) {
-      const res = await fetch(`${this.baseUrl}/oauth2/token`, {
+    for (let attempt = 1; attempt <= TOKEN_MAX_ATTEMPTS; attempt++) {
+      const res = await fetchWithTimeout(`${this.baseUrl}/oauth2/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -170,7 +200,7 @@ export class TossBroker implements BrokerClient {
           `HTTP ${res.status}`,
       );
       lastErr = desc;
-      if (!isIpDenied(res.status, desc) || attempt === 6) break;
+      if (!isIpDenied(res.status, desc) || attempt === TOKEN_MAX_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, 250 * attempt));
     }
     throw new BrokerError(`토스 토큰 발급 실패: ${lastErr}`);
@@ -196,7 +226,7 @@ export class TossBroker implements BrokerClient {
 
     let lastErr = `토스 API 오류`;
     let refreshed = false;
-    const maxAttempts = 10;
+    const maxAttempts = REQUEST_MAX_ATTEMPTS;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const headers = buildHeaders(token);
@@ -204,7 +234,7 @@ export class TossBroker implements BrokerClient {
         headers['X-Tossinvest-Account'] = String(await this.resolveAccountSeq());
       }
 
-      const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
+      const res = await fetchWithTimeout(`${this.baseUrl}${path}`, { ...init, headers });
       const json = await res.json().catch(() => ({}));
       const data = asRecord(json);
       if (res.ok) return json as T;
@@ -219,7 +249,7 @@ export class TossBroker implements BrokerClient {
         continue;
       }
 
-      // 출구 IP 회전 환경: 허용 IP가 아니면 경로가 바뀔 때까지 재시도
+      // 출구 IP 회전 환경: 허용 IP가 아니면 짧게만 재시도 (UI/헬스 블로킹 방지)
       if (isIpDenied(res.status, lastErr) && attempt < maxAttempts) {
         this.clearToken();
         await new Promise((r) => setTimeout(r, 200 * attempt));

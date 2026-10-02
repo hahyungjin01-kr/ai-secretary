@@ -129,6 +129,22 @@ async function markPrices(state: AppState): Promise<Record<string, number>> {
   return marks;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timeout ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 function attachPersistFlush(res: express.Response) {
   const origEnd = res.end.bind(res);
   let flushed = false;
@@ -207,13 +223,18 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       let state = loadState();
       if (state.preferBroker) {
         try {
-          state = await syncFromBroker(state);
+          // Toss IP 재시도에 UI가 멈추지 않도록 상한
+          state = await withTimeout(syncFromBroker(state), 12_000, 'broker-sync');
         } catch {
           // keep local snapshot if broker sync fails; status will show error
         }
       }
-      const marks = await markPrices(state);
-      res.json(await publicState(state, marks));
+      const marks = await withTimeout(markPrices(state), 8_000, 'marks').catch(() => {
+        const fallback: Record<string, number> = {};
+        for (const p of state.positions) fallback[p.symbol] = p.avgPrice;
+        return fallback;
+      });
+      res.json(await withTimeout(publicState(state, marks), 12_000, 'public-state'));
     } catch (err) {
       const message = err instanceof Error ? err.message : '대시보드 오류';
       res.status(500).json({ error: message });
