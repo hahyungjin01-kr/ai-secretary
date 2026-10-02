@@ -77,13 +77,22 @@ Firebase Functions 출구 IP는 **회전**합니다.
 - GCP **Serverless VPC Access + Cloud NAT** 고정 외부 IP, 또는
 - 아래 Docker VPS(고정 IP) 경로
 
-## 대안 — Docker VPS 상시 기동
+## 대안 — 네이버 클라우드(NCP) / Docker VPS 상시 기동
 
-고정 IP Linux VPS에 Docker로 올리면 토스 허용 IP 등록이 쉽습니다.
+국내 **네이버 클라우드 Micro Server(1년 무료)** 에 Docker로 올리면 PC를 꺼도 동작하고, 출구 IP도 토스 허용 IP에 등록하기 쉽습니다.
+
+**자세한 단계: [docs/NCP.md](./docs/NCP.md)**
+
+요약:
+1. Classic → Micro(Ubuntu) 서버 1대 생성 + 포트포워딩(SSH)
+2. SSH 접속 후 repo clone + `.env` 복사
+3. `sudo bash scripts/install-always-on.sh`
+4. 출력된 Egress IP를 토스 허용 IP에 등록
+5. `https://<NGROK_DOMAIN>` 으로 휴대폰 알림 켜기
 
 ```bash
 cd traders-ai
-cp /안전한경로/.env .env
+# .env 에 TOSS_* / NGROK_* 포함
 sudo bash scripts/install-always-on.sh
 ```
 
