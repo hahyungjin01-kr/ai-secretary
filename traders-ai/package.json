@@ -17,6 +17,7 @@
     "start:public": "npm run build && HOST=0.0.0.0 PORT=8787 tsx server/index.ts",
     "start:mobile": "bash scripts/start-mobile.sh",
     "start:always": "bash scripts/run-always-on.sh",
+    "deploy:free-cloud": "bash scripts/bootstrap-free-cloud.sh",
     "deploy:firebase": "bash scripts/deploy-firebase.sh",
     "lint": "oxlint",
     "test": "vitest run",

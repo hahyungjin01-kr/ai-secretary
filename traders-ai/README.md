@@ -48,28 +48,27 @@ npm run dev
 - Web: http://localhost:5173
 - API: http://localhost:8787
 
-### PC 꺼도 유지 — Firebase (권장)
+### PC 꺼도 유지 — 무료 클라우드 (권장)
 
-집 PC/Cloud Agent는 꺼지면 스케줄·푸시도 멈춥니다. **Firebase Hosting + Functions + Firestore + Scheduler**로 상시 기동합니다.
+결제 없이 **Oracle Cloud Always Free** VM + Docker로 상시 기동합니다.
+
+> 단계별 가이드: **[FREE_CLOUD.md](./FREE_CLOUD.md)**
 
 ```bash
-cd traders-ai
-# .firebaserc 에 프로젝트 ID 설정
-# Firebase 시크릿/파라미터 등록 (USAGE.md 참고)
-npm run deploy:firebase
+# Oracle 무료 VM에 SSH 접속한 뒤
+cd ai-secretary/traders-ai   # .env 복사해 둔 상태
+sudo bash scripts/bootstrap-free-cloud.sh
+# 또는: npm run deploy:free-cloud
 ```
 
-- Hosting: UI (`https://<project>.web.app`)
-- Functions: `/api/**` + 평일 17:30 분석 / 18:00 푸시 / 09:05 예약체결
-- Firestore: 상태·푸시 구독 영속화
-- **토스 허용 IP**: Functions 출구 IP는 회전합니다. 앱의「등록할 출구 IP 보기」로 확인하거나, 고정 IP가 필요하면 VPC Connector + Cloud NAT / Docker VPS를 쓰세요.
+### 대안 — Firebase (Blaze 결제 필요)
 
-### 대안 — Docker 상시 기동 (고정 IP VPS)
+카드 등록이 가능하면 Hosting + Functions + Firestore도 사용할 수 있습니다. → [USAGE.md](./USAGE.md)
+
+### 임시 — 집 PC Docker
 
 ```bash
 cd traders-ai
-sudo bash scripts/install-always-on.sh
-# 또는
 bash scripts/run-always-on.sh
 ```
 

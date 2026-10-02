@@ -2,10 +2,27 @@
 
 수익을 보장하지 않습니다.
 
-## PC 꺼도 서버 유지 — Firebase (권장)
+## PC 꺼도 서버 유지 — 무료 클라우드 (권장)
+
+카드/Blaze 없이 **Oracle Cloud Always Free**에 올리는 방법입니다.
+
+→ 전체 클릭 가이드: **[FREE_CLOUD.md](./FREE_CLOUD.md)**
+
+요약:
+1. Oracle 무료 계정 + Ubuntu VM 생성 (SSH 키·Public IP 저장)
+2. VM에서 repo clone, 집 PC의 `.env`를 `scp`로 복사
+3. `sudo bash scripts/bootstrap-free-cloud.sh`
+4. 출력된 **Egress IP**를 토스 허용 IP에 등록
+5. `https://<NGROK_DOMAIN>` 으로 휴대폰 알림 켜기
+
+가입 시 카드 인증이 거절되면 FREE_CLOUD.md의「가입이 안 될 때」를 보세요.
+
+---
+
+## 대안 — Firebase (Blaze 결제 필요)
 
 Cursor Cloud Agent / 집 PC는 **전원을 끄거나 세션이 끝나면 서버도 종료**됩니다.  
-17:30 분석 · 18:00 푸시 · 09:05 예약체결을 PC와 무관하게 돌리려면 **Firebase**에 올립니다.
+카드로 Blaze 등록이 가능하면 **Firebase**에 올릴 수 있습니다.
 
 ### 1) 준비
 1. [Firebase Console](https://console.firebase.google.com/)에서 프로젝트 생성 (Blaze 요금제 — 외부 HTTPS/스케줄 필요)
