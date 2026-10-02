@@ -48,12 +48,31 @@ export interface CreateAppOptions {
   serveStatic?: boolean;
 }
 
-async function publicState(state: AppState, marks: Record<string, number> = {}) {
+async function publicState(
+  state: AppState,
+  marks: Record<string, number> = {},
+  opts: { probeBroker?: boolean } = {},
+) {
   recoverStaleExecuting(state);
   reconcilePendingAlerts(state);
   const setup = brokerConfigSummary();
-  const broker = await withTimeout(fetchBrokerStatus(false), 5_000, 'broker-status').catch(
-    (err) => ({
+  // 대시보드 기본은 토스를 기다리지 않음 (모바일/ngrok 타임아웃 방지)
+  let broker: Awaited<ReturnType<typeof fetchBrokerStatus>>;
+  if (opts.probeBroker === false) {
+    broker = {
+      configured: setup.configured,
+      connected: false,
+      venue: setup.configured ? 'toss' : 'local-paper',
+      provider: setup.configured ? 'toss' : 'none',
+      baseUrl: setup.baseUrl,
+      liveCapable: setup.liveCapable,
+      liveArmed: false,
+      message: setup.configured
+        ? '로컬 스냅샷 표시 · 「잔고 새로고침」으로 토스 동기화'
+        : '토스 API 키 없음',
+    };
+  } else {
+    broker = await withTimeout(fetchBrokerStatus(false), 4_000, 'broker-status').catch((err) => ({
       configured: setup.configured,
       connected: false,
       venue: (setup.configured ? 'toss' : 'local-paper') as 'toss' | 'local-paper',
@@ -63,8 +82,8 @@ async function publicState(state: AppState, marks: Record<string, number> = {}) 
       liveArmed: false,
       message: '토스 응답 지연 — 로컬 스냅샷 표시',
       error: err instanceof Error ? err.message : 'broker status timeout',
-    }),
-  );
+    }));
+  }
   const equity = portfolioValue(state, marks);
   const risk = evaluateRisk(state, marks);
   persistRiskFlags(state, risk);
@@ -234,21 +253,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.get('/api/dashboard', async (_req, res) => {
     try {
       const state = loadState();
-      // 빠른 표시: 평균가 마크 → 응답 후 백그라운드에서 브로커/시세 갱신
+      // 즉시 응답 — 토스/시세 대기는 UI를 죽임 (모바일 fetch 실패)
       const marks: Record<string, number> = {};
       for (const p of state.positions) marks[p.symbol] = p.avgPrice;
-      const payload = await publicState(state, marks);
+      const payload = await publicState(state, marks, { probeBroker: false });
       res.json(payload);
-
-      if (state.preferBroker) {
-        void syncFromBroker(loadState()).catch((err) => {
-          console.warn(
-            '[dashboard] background sync',
-            err instanceof Error ? err.message : err,
-          );
-        });
-      }
-      void markPrices(loadState()).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : '대시보드 오류';
       res.status(500).json({ error: message });

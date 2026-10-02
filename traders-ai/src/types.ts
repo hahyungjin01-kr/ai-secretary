@@ -276,10 +276,36 @@ async function apiHeaders(json = true): Promise<HeadersInit> {
 }
 
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const attempt = async () => {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 20_000);
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: init?.signal ?? ctrl.signal,
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          ...(init?.headers as Record<string, string> | undefined),
+        },
+      });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
   try {
-    return await fetch(input, init);
-  } catch {
-    throw new Error('서버에 연결하지 못했습니다. 주소/터널을 확인하세요.');
+    return await attempt();
+  } catch (first) {
+    // 일시적 ngrok/모바일 끊김 1회 재시도
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      return await attempt();
+    } catch {
+      const name = first instanceof Error ? first.name : '';
+      if (name === 'AbortError') {
+        throw new Error('서버 응답이 너무 느립니다. 새로고침 후 다시 시도하세요.');
+      }
+      throw new Error('서버에 연결하지 못했습니다. 주소/터널을 확인하세요.');
+    }
   }
 }
 
