@@ -186,18 +186,18 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   app.get('/api/health', async (_req, res) => {
-    const state = loadState();
-    const broker = await fetchBrokerStatus(state.liveTradingArmed);
+    // Keep this lightweight — Docker/ngrok healthchecks must not wait on Toss.
+    const setup = brokerConfigSummary();
     res.json({
       ok: true,
       service: 'traders-ai',
       model: 'moe-moa-devil-toss',
       backend: process.env.STATE_BACKEND || 'auto',
       broker: {
-        configured: broker.configured,
-        connected: broker.connected,
-        venue: broker.venue,
-        provider: broker.provider,
+        configured: setup.configured,
+        connected: null,
+        venue: setup.configured ? 'toss' : null,
+        provider: setup.configured ? 'toss' : null,
       },
     });
   });

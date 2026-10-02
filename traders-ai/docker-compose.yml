@@ -43,7 +43,8 @@ services:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     command:
       - http
-      - --domain=${NGROK_DOMAIN}
+      - --url=${NGROK_DOMAIN}
       - app:8787
+    # depends_on healthy app — /api/health must stay lightweight (no Toss call)
     profiles:
       - tunnel
