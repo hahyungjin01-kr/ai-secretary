@@ -1,0 +1,55 @@
+{
+  "name": "traders-ai",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "lib/functions.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c teal,blue \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "vite --host 0.0.0.0 --port 5173",
+    "dev:api": "tsx watch server/index.ts",
+    "build": "tsc -b && vite build",
+    "build:functions": "tsc -p tsconfig.functions.json",
+    "start": "tsx server/index.ts",
+    "start:public": "npm run build && HOST=0.0.0.0 PORT=8787 tsx server/index.ts",
+    "start:mobile": "bash scripts/start-mobile.sh",
+    "start:always": "bash scripts/run-always-on.sh",
+    "deploy:free-cloud": "bash scripts/bootstrap-free-cloud.sh",
+    "deploy:firebase": "bash scripts/deploy-firebase.sh",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^6.6.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "technicalindicators": "^3.1.0",
+    "web-push": "^3.6.7",
+    "yahoo-finance2": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@types/web-push": "^3.6.4",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "firebase-tools": "^14.0.0",
+    "oxlint": "^1.81.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.3"
+  }
+}

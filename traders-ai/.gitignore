@@ -1,0 +1,15 @@
+node_modules
+dist
+lib
+data/state.json
+data/vapid.json
+data/push-subscriptions.json
+data/api-secret.json
+.env
+.env.local
+*.log
+.DS_Store
+.firebase
+firebase-debug.log
+firebase-debug.*.log
+.firebaserc.local
