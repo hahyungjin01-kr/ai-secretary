@@ -51,7 +51,20 @@ export interface CreateAppOptions {
 async function publicState(state: AppState, marks: Record<string, number> = {}) {
   recoverStaleExecuting(state);
   reconcilePendingAlerts(state);
-  const broker = await fetchBrokerStatus(false);
+  const setup = brokerConfigSummary();
+  const broker = await withTimeout(fetchBrokerStatus(false), 5_000, 'broker-status').catch(
+    (err) => ({
+      configured: setup.configured,
+      connected: false,
+      venue: (setup.configured ? 'toss' : 'local-paper') as 'toss' | 'local-paper',
+      provider: (setup.configured ? 'toss' : 'none') as 'toss' | 'none',
+      baseUrl: setup.baseUrl,
+      liveCapable: setup.liveCapable,
+      liveArmed: false,
+      message: '토스 응답 지연 — 로컬 스냅샷 표시',
+      error: err instanceof Error ? err.message : 'broker status timeout',
+    }),
+  );
   const equity = portfolioValue(state, marks);
   const risk = evaluateRisk(state, marks);
   persistRiskFlags(state, risk);
@@ -220,21 +233,22 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
 
   app.get('/api/dashboard', async (_req, res) => {
     try {
-      let state = loadState();
+      const state = loadState();
+      // 빠른 표시: 평균가 마크 → 응답 후 백그라운드에서 브로커/시세 갱신
+      const marks: Record<string, number> = {};
+      for (const p of state.positions) marks[p.symbol] = p.avgPrice;
+      const payload = await publicState(state, marks);
+      res.json(payload);
+
       if (state.preferBroker) {
-        try {
-          // Toss IP 재시도에 UI가 멈추지 않도록 상한
-          state = await withTimeout(syncFromBroker(state), 12_000, 'broker-sync');
-        } catch {
-          // keep local snapshot if broker sync fails; status will show error
-        }
+        void syncFromBroker(loadState()).catch((err) => {
+          console.warn(
+            '[dashboard] background sync',
+            err instanceof Error ? err.message : err,
+          );
+        });
       }
-      const marks = await withTimeout(markPrices(state), 8_000, 'marks').catch(() => {
-        const fallback: Record<string, number> = {};
-        for (const p of state.positions) fallback[p.symbol] = p.avgPrice;
-        return fallback;
-      });
-      res.json(await withTimeout(publicState(state, marks), 12_000, 'public-state'));
+      void markPrices(loadState()).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : '대시보드 오류';
       res.status(500).json({ error: message });

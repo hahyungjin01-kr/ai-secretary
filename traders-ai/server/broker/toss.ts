@@ -10,9 +10,9 @@ import type {
 
 const BASE_URL = 'https://openapi.tossinvest.com';
 /** Per-request timeout — Cloud/ngrok egress + IP retries must not hang the UI */
-const FETCH_TIMEOUT_MS = Number(process.env.TOSS_FETCH_TIMEOUT_MS || 8_000);
-const TOKEN_MAX_ATTEMPTS = Number(process.env.TOSS_TOKEN_MAX_ATTEMPTS || 3);
-const REQUEST_MAX_ATTEMPTS = Number(process.env.TOSS_REQUEST_MAX_ATTEMPTS || 3);
+const FETCH_TIMEOUT_MS = Number(process.env.TOSS_FETCH_TIMEOUT_MS || 4_000);
+const TOKEN_MAX_ATTEMPTS = Number(process.env.TOSS_TOKEN_MAX_ATTEMPTS || 2);
+const REQUEST_MAX_ATTEMPTS = Number(process.env.TOSS_REQUEST_MAX_ATTEMPTS || 2);
 
 function num(v: unknown, fallback = 0): number {
   const n = Number(v);
